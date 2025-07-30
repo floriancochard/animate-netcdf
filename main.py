@@ -31,7 +31,16 @@ class UnifiedAnimator:
         # Print dataset info
         print(f"Dimensions: {dict(self.ds.dims)}")
         print(f"Variables: {list(self.ds.data_vars.keys())}")
-        print(f"Time steps: {len(self.ds.time)}")
+        # Find the first dimension that's not spatial (not lat/lon)
+        animate_dim = None
+        for dim in self.ds.dims:
+            if dim not in ['lat', 'lon', 'latitude', 'longitude', 'y', 'x', 'nj', 'ni']:
+                animate_dim = dim
+                break
+        if animate_dim:
+            print(f"Animation dimension '{animate_dim}': {len(self.ds[animate_dim])} steps")
+        else:
+            print("No suitable animation dimension found")
         
         # Check for ffmpeg
         self._check_ffmpeg()
@@ -62,7 +71,7 @@ class UnifiedAnimator:
             }
         return info
     
-    def format_datetime(self, time_value):
+    def format_datetime(self, time_value, animate_dim='time'):
         """Format datetime for clean display."""
         if hasattr(time_value, 'values'):
             time_value = time_value.values
@@ -74,7 +83,7 @@ class UnifiedAnimator:
             dt = pd.to_datetime(time_value)
         
         # Format based on the time range
-        if len(self.ds.time) > 24:  # More than a day
+        if len(self.ds[animate_dim]) > 24:  # More than a day
             return dt.strftime("%Y-%m-%d %H:%M UTC")
         else:  # Less than a day
             return dt.strftime("%H:%M:%S UTC")
@@ -109,10 +118,10 @@ class UnifiedAnimator:
         
         return filtered_data
     
-    def prepare_data_for_plotting(self, variable, time_step=0):
+    def prepare_data_for_plotting(self, variable, time_step=0, animate_dim='time'):
         """Prepare data for plotting by handling extra dimensions."""
         # Get the data array
-        data_array = self.ds[variable].isel(time=time_step)
+        data_array = self.ds[variable].isel({animate_dim: time_step})
         
         # Squeeze out any singleton dimensions (like level=1)
         data_array = data_array.squeeze()
@@ -124,12 +133,18 @@ class UnifiedAnimator:
         if hasattr(self.ds, 'latitude') and hasattr(self.ds, 'longitude'):
             lats = self.ds.latitude.values
             lons = self.ds.longitude.values
+        elif hasattr(self.ds, 'lat') and hasattr(self.ds, 'lon'):
+            lats = self.ds.lat.values
+            lons = self.ds.lon.values
         else:
             # Try to get coordinates from the data array itself
             coords = data_array.coords
             if 'latitude' in coords and 'longitude' in coords:
                 lats = coords['latitude'].values
                 lons = coords['longitude'].values
+            elif 'lat' in coords and 'lon' in coords:
+                lats = coords['lat'].values
+                lons = coords['lon'].values
             else:
                 # Fallback: create coordinate arrays based on data shape
                 lats = np.arange(data.shape[0])
@@ -147,13 +162,30 @@ class UnifiedAnimator:
         print(f"\nDataset Information:")
         print(f"  Dimensions: {dict(self.ds.dims)}")
         print(f"  Variables: {list(self.ds.data_vars.keys())}")
-        print(f"  Time steps: {len(self.ds.time)}")
         
-        # Show time range
-        if len(self.ds.time) > 0:
-            start_time = self.format_datetime(self.ds.time[0])
-            end_time = self.format_datetime(self.ds.time[-1])
-            print(f"  Time range: {start_time} to {end_time}")
+        # Find animation dimension
+        animate_dim = None
+        for dim in self.ds.dims:
+            if dim not in ['lat', 'lon', 'latitude', 'longitude', 'y', 'x', 'nj', 'ni']:
+                animate_dim = dim
+                break
+        
+        if animate_dim:
+            print(f"  Animation dimension '{animate_dim}': {len(self.ds[animate_dim])} steps")
+        else:
+            print("  No suitable animation dimension found")
+        
+        # Show animation dimension range
+        animate_dim = None
+        for dim in self.ds.dims:
+            if dim not in ['lat', 'lon', 'latitude', 'longitude', 'y', 'x', 'nj', 'ni']:
+                animate_dim = dim
+                break
+        
+        if animate_dim and len(self.ds[animate_dim]) > 0:
+            start_val = self.ds[animate_dim][0].values
+            end_val = self.ds[animate_dim][-1].values
+            print(f"  {animate_dim} range: {start_val} to {end_val}")
         
         # Show variable details
         print(f"\nVariable Details:")
@@ -173,16 +205,16 @@ class UnifiedAnimator:
             print(f"  Latitude range: {lat.min().values:.2f} to {lat.max().values:.2f}")
             print(f"  Longitude range: {lon.min().values:.2f} to {lon.max().values:.2f}")
     
-    def create_single_plot(self, variable, plot_type='efficient', time_step=0):
+    def create_single_plot(self, variable, plot_type='efficient', time_step=0, animate_dim='time'):
         """Create a single plot for preview."""
         print(f"\n📊 Creating {plot_type} plot for {variable} at time step {time_step}...")
         
         if plot_type == 'efficient':
-            fig = self._create_efficient_plot(variable, time_step)
+            fig = self._create_efficient_plot(variable, time_step, animate_dim)
         elif plot_type == 'contour':
-            fig = self._create_contour_plot(variable, time_step)
+            fig = self._create_contour_plot(variable, time_step, animate_dim)
         elif plot_type == 'heatmap':
-            fig = self._create_heatmap_plot(variable, time_step)
+            fig = self._create_heatmap_plot(variable, time_step, animate_dim)
         else:
             print(f"❌ Unknown plot type: {plot_type}")
             return None
@@ -190,13 +222,13 @@ class UnifiedAnimator:
         plt.show()
         return fig
     
-    def _create_efficient_plot(self, variable, time_step=0):
+    def _create_efficient_plot(self, variable, time_step=0, animate_dim='time'):
         """Create an efficient single plot with Cartopy."""
         fig, ax = plt.subplots(figsize=(15, 10), 
                               subplot_kw={'projection': ccrs.PlateCarree()})
         
         # Get data and coordinates using the helper method
-        data, lats, lons = self.prepare_data_for_plotting(variable, time_step)
+        data, lats, lons = self.prepare_data_for_plotting(variable, time_step, animate_dim)
         
         # Filter low values
         filtered_data = self.filter_low_values(data)
@@ -225,9 +257,9 @@ class UnifiedAnimator:
         cbar.set_label(f'{self.get_variable_title(variable)} ({self.ds[variable].attrs.get("units", "units")})')
         
         # Add title and subtitle with better positioning
-        time_str = self.format_datetime(self.ds.time.isel(time=time_step))
+        time_str = self.format_datetime(self.ds[animate_dim].isel({animate_dim: time_step}), animate_dim)
         title = f"{self.get_variable_title(variable)}"
-        subtitle = f"Time: {time_str}"
+        subtitle = f"{animate_dim.capitalize()}: {time_str}"
         units = self.get_variable_subtitle(variable)
         
         ax.set_title(f'{title}\n{subtitle}', fontsize=14, pad=30)
@@ -238,13 +270,13 @@ class UnifiedAnimator:
         plt.tight_layout()
         return fig
     
-    def _create_contour_plot(self, variable, time_step=0):
+    def _create_contour_plot(self, variable, time_step=0, animate_dim='time'):
         """Create a contour single plot with Cartopy."""
         fig, ax = plt.subplots(figsize=(15, 10), 
                               subplot_kw={'projection': ccrs.PlateCarree()})
         
         # Get data and coordinates using the helper method
-        data, lats, lons = self.prepare_data_for_plotting(variable, time_step)
+        data, lats, lons = self.prepare_data_for_plotting(variable, time_step, animate_dim)
         
         # Filter low values
         filtered_data = self.filter_low_values(data)
@@ -273,9 +305,9 @@ class UnifiedAnimator:
         cbar.set_label(f'{self.get_variable_title(variable)} ({self.ds[variable].attrs.get("units", "units")})')
         
         # Add title and subtitle with better positioning
-        time_str = self.format_datetime(self.ds.time.isel(time=time_step))
+        time_str = self.format_datetime(self.ds[animate_dim].isel({animate_dim: time_step}), animate_dim)
         title = f"{self.get_variable_title(variable)}"
-        subtitle = f"Time: {time_str}"
+        subtitle = f"{animate_dim.capitalize()}: {time_str}"
         units = self.get_variable_subtitle(variable)
         
         ax.set_title(f'{title}\n{subtitle}', fontsize=14, pad=30)
@@ -286,12 +318,12 @@ class UnifiedAnimator:
         plt.tight_layout()
         return fig
     
-    def _create_heatmap_plot(self, variable, time_step=0):
+    def _create_heatmap_plot(self, variable, time_step=0, animate_dim='time'):
         """Create a simple heatmap plot."""
         fig, ax = plt.subplots(figsize=(12, 8))
         
         # Get data using the helper method
-        data, _, _ = self.prepare_data_for_plotting(variable, time_step)
+        data, _, _ = self.prepare_data_for_plotting(variable, time_step, animate_dim)
         
         # Filter low values
         filtered_data = self.filter_low_values(data)
@@ -304,9 +336,9 @@ class UnifiedAnimator:
         cbar.set_label(f'{self.get_variable_title(variable)} ({self.ds[variable].attrs.get("units", "units")})')
         
         # Add title and subtitle
-        time_str = self.format_datetime(self.ds.time.isel(time=time_step))
+        time_str = self.format_datetime(self.ds[animate_dim].isel({animate_dim: time_step}), animate_dim)
         title = f"{self.get_variable_title(variable)}"
-        subtitle = f"Time: {time_str}"
+        subtitle = f"{animate_dim.capitalize()}: {time_str}"
         units = self.get_variable_subtitle(variable)
         
         ax.set_title(f'{title}\n{subtitle}', fontsize=14, pad=20)
@@ -318,7 +350,7 @@ class UnifiedAnimator:
         return fig
     
     def create_direct_animation(self, variable, output_file=None, fps=10, 
-                              plot_type='efficient', title=None):
+                              plot_type='efficient', title=None, animate_dim='time'):
         """Create a direct animation (no individual frames)."""
         if output_file is None:
             output_file = f'{variable}_{plot_type}_animation.mp4'
@@ -333,13 +365,22 @@ class UnifiedAnimator:
         print(f"💾 Initial memory usage: {initial_memory:.1f} MB")
         
         # Get data range for consistent colorbar (excluding filtered values)
-        all_data = self.ds[variable].values
-        filtered_all_data = self.filter_low_values(all_data)
-        data_min = np.nanmin(filtered_all_data)
-        data_max = np.nanmax(filtered_all_data)
+        # For 3D data, we need to handle the animate_dim properly
+        try:
+            all_data = self.ds[variable].values
+            filtered_all_data = self.filter_low_values(all_data)
+            data_min = np.nanmin(filtered_all_data)
+            data_max = np.nanmax(filtered_all_data)
+        except Exception as e:
+            print(f"Warning: Could not calculate full data range: {e}")
+            # Use a sample of the data for range calculation
+            sample_data, _, _ = self.prepare_data_for_plotting(variable, 0, animate_dim)
+            filtered_sample = self.filter_low_values(sample_data)
+            data_min = np.nanmin(filtered_sample)
+            data_max = np.nanmax(filtered_sample)
         
         # Get coordinates using helper method
-        _, lats, lons = self.prepare_data_for_plotting(variable, 0)
+        _, lats, lons = self.prepare_data_for_plotting(variable, 0, animate_dim)
         
         # Create figure and axis based on plot type
         if plot_type in ['efficient', 'contour']:
@@ -363,7 +404,7 @@ class UnifiedAnimator:
             
             if plot_type == 'efficient':
                 # Initialize efficient plot
-                initial_data, _, _ = self.prepare_data_for_plotting(variable, 0)
+                initial_data, _, _ = self.prepare_data_for_plotting(variable, 0, animate_dim)
                 filtered_initial_data = self.filter_low_values(initial_data)
                 im = ax.imshow(filtered_initial_data, cmap='Blues', alpha=0.8,
                               extent=[lons.min(), lons.max(), lats.min(), lats.max()],
@@ -376,7 +417,7 @@ class UnifiedAnimator:
                 
             else:  # contour
                 # Initialize contour plot
-                initial_data, _, _ = self.prepare_data_for_plotting(variable, 0)
+                initial_data, _, _ = self.prepare_data_for_plotting(variable, 0, animate_dim)
                 filtered_initial_data = self.filter_low_values(initial_data)
                 levels = np.linspace(data_min, data_max, 20)
                 contour = ax.contourf(lons, lats, filtered_initial_data, levels=levels, cmap='Blues',
@@ -393,7 +434,7 @@ class UnifiedAnimator:
             fig, ax = plt.subplots(figsize=(12, 8))
             
             # Initialize heatmap plot
-            initial_data, _, _ = self.prepare_data_for_plotting(variable, 0)
+            initial_data, _, _ = self.prepare_data_for_plotting(variable, 0, animate_dim)
             filtered_initial_data = self.filter_low_values(initial_data)
             im = ax.imshow(filtered_initial_data, cmap='Blues', aspect='auto',
                           vmin=data_min, vmax=data_max)
@@ -415,7 +456,7 @@ class UnifiedAnimator:
                            ha='center', fontsize=10, style='italic')
         
         frame_count = 0
-        max_frames = len(self.ds.time)
+        max_frames = len(self.ds[animate_dim])
         
         def animate(frame):
             """Animation function with proper memory management."""
@@ -429,13 +470,13 @@ class UnifiedAnimator:
                     print(f"📊 Frame {frame_count}/{max_frames}, Memory: {current_memory:.1f} MB")
                 
                 # Get data for current frame using helper method
-                data, _, _ = self.prepare_data_for_plotting(variable, frame)
+                data, _, _ = self.prepare_data_for_plotting(variable, frame, animate_dim)
                 filtered_data = self.filter_low_values(data)
                 
                 # Update title and subtitle
-                time_str = self.format_datetime(self.ds.time.isel(time=frame))
+                time_str = self.format_datetime(self.ds[animate_dim].isel({animate_dim: frame}), animate_dim)
                 title_text.set_text(title)
-                subtitle_text.set_text(f"Time: {time_str}")
+                subtitle_text.set_text(f"{animate_dim.capitalize()}: {time_str}")
                 units_text.set_text(self.get_variable_subtitle(variable))
                 
                 # Update plot based on type
@@ -497,7 +538,7 @@ class UnifiedAnimator:
         import gc
         gc.collect()
     
-    def create_batch_animations(self, plot_type='efficient', fps=10):
+    def create_batch_animations(self, plot_type='efficient', fps=10, animate_dim='time'):
         """Create animations for all variables."""
         print(f"\n🎬 Creating {plot_type} animations for all variables...")
         
@@ -510,7 +551,7 @@ class UnifiedAnimator:
             
             try:
                 output_file = f"{var_name}_{plot_type}_animation.mp4"
-                self.create_direct_animation(var_name, output_file, fps, plot_type)
+                self.create_direct_animation(var_name, output_file, fps, plot_type, animate_dim=animate_dim)
                 print(f"✅ Created: {output_file}")
                 successful += 1
                 
@@ -584,21 +625,40 @@ Examples:
     parser.add_argument('--percentile', type=int, default=5,
                        help='Percentile threshold for filtering low values (default: 5)')
     
+    parser.add_argument('--animate-dim', default='time',
+                       help='Dimension to animate over (default: time)')
+    
     parser.add_argument('--no-interactive', action='store_true',
                        help='Skip interactive mode and use command line arguments only')
     
     args = parser.parse_args()
-    
+
     # Check if file exists
     if not os.path.exists(args.nc_file):
         print(f"Error: File '{args.nc_file}' not found!")
         return
-    
+
     try:
         # Load the animator
         print(f"\nLoading NetCDF file: {args.nc_file}")
         animator = UnifiedAnimator(args.nc_file)
+
+        # Validate or auto-select animate_dim
+        ds_dims = list(animator.ds.dims)
+        spatial_dims = ['lat', 'lon', 'latitude', 'longitude', 'y', 'x', 'nj', 'ni']
+        candidate_dims = [d for d in ds_dims if d not in spatial_dims]
+
+        animate_dim = args.animate_dim
+        if animate_dim not in ds_dims:
+            if candidate_dims:
+                print(f"⚠️  Dimension '{animate_dim}' not found. Using '{candidate_dims[0]}' instead.")
+                animate_dim = candidate_dims[0]
+            else:
+                print(f"❌ Error: No suitable animation dimension found in file. Available dimensions: {ds_dims}")
+                return
         
+
+
         # Update percentile filter if specified
         if args.percentile != 5:
             # Store the original method
@@ -615,7 +675,7 @@ Examples:
                 print(f"\n🎬 Creating batch animations...")
                 print(f"Type: {args.type}")
                 print(f"FPS: {args.fps}")
-                animator.create_batch_animations(args.type, args.fps)
+                animator.create_batch_animations(args.type, args.fps, animate_dim)
                 
             elif args.plot:
                 # Single plot mode
@@ -623,7 +683,7 @@ Examples:
                 print(f"Variable: {args.variable}")
                 print(f"Type: {args.type}")
                 print(f"Time step: {args.time_step}")
-                animator.create_single_plot(args.variable, args.type, args.time_step)
+                animator.create_single_plot(args.variable, args.type, args.time_step, animate_dim)
                 
             else:
                 # Single animation mode
@@ -633,8 +693,8 @@ Examples:
                 print(f"Type: {args.type}")
                 print(f"Output: {output_file}")
                 print(f"FPS: {args.fps}")
-                print(f"Total frames: {len(animator.ds.time)}")
-                animator.create_direct_animation(args.variable, output_file, args.fps, args.type)
+                print(f"Total frames: {len(animator.ds[animate_dim])}")
+                animator.create_direct_animation(args.variable, output_file, args.fps, args.type, animate_dim=animate_dim)
             
             # Clean up
             animator.close()
@@ -692,7 +752,7 @@ Examples:
                 return
             
             # Create plot
-            animator.create_single_plot(variable, plot_type)
+            animator.create_single_plot(variable, plot_type, animate_dim=animate_dim)
             
         elif choice == "2":
             # Single animation
@@ -747,9 +807,9 @@ Examples:
             print(f"Variable: {variable}")
             print(f"Output: {output_file}")
             print(f"FPS: {fps}")
-            print(f"Total frames: {len(animator.ds.time)}")
+            print(f"Total frames: {len(animator.ds[animate_dim])}")
             
-            animator.create_direct_animation(variable, output_file, fps, anim_type)
+            animator.create_direct_animation(variable, output_file, fps, anim_type, animate_dim)
             
         elif choice == "3":
             # Batch animations
@@ -780,7 +840,7 @@ Examples:
                 fps = int(fps)
             
             # Create batch animations
-            animator.create_batch_animations(anim_type, fps)
+            animator.create_batch_animations(anim_type, fps, animate_dim)
             
         elif choice == "4":
             print("Goodbye!")
