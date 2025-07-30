@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-Multi-File Animation Engine for NetCDF Data
+Multi-File NetCDF Animator
+Handles animations across multiple NetCDF files without concatenation.
 """
 
 import os
@@ -13,6 +14,8 @@ from typing import List, Optional, Dict, Any, Tuple
 import xarray as xr
 import logging
 from datetime import datetime
+import subprocess
+import os
 
 # Import our custom modules
 from config_manager import AnimationConfig, ConfigManager
@@ -29,7 +32,10 @@ class MultiFileAnimator:
         self.file_manager = file_manager
         self.config = config
         self.global_data_range = None
+        self.ffmpeg_available = False
+        self.available_codecs = []
         self.setup_logging()
+        self._check_ffmpeg()
         
     def setup_logging(self):
         """Set up logging for the multi-file animator."""
@@ -41,6 +47,80 @@ class MultiFileAnimator:
             formatter = logging.Formatter('🎬 MultiFile: %(message)s')
             handler.setFormatter(formatter)
             self.logger.addHandler(handler)
+    
+    def _check_ffmpeg(self):
+        """Check if ffmpeg is available and what codecs are supported."""
+        try:
+            result = subprocess.run(['ffmpeg', '-version'], 
+                                  capture_output=True, text=True)
+            if result.returncode != 0:
+                print("⚠️  ffmpeg not found. Install ffmpeg for video creation.")
+                self.ffmpeg_available = False
+                self.available_codecs = []
+            else:
+                self.ffmpeg_available = True
+                # Check for available codecs
+                codec_result = subprocess.run(['ffmpeg', '-codecs'], 
+                                            capture_output=True, text=True)
+                if codec_result.returncode == 0:
+                    codec_output = codec_result.stdout
+                    self.available_codecs = []
+                    if 'libx264' in codec_output:
+                        self.available_codecs.append('libx264')
+                    if 'libxvid' in codec_output:
+                        self.available_codecs.append('libxvid')
+                    if 'mpeg4' in codec_output:
+                        self.available_codecs.append('mpeg4')
+                    print(f"📹 Available codecs: {self.available_codecs}")
+                else:
+                    self.available_codecs = ['mpeg4']  # Default fallback
+        except FileNotFoundError:
+            print("⚠️  ffmpeg not found. Install ffmpeg for video creation.")
+            self.ffmpeg_available = False
+            self.available_codecs = []
+    
+    def _save_animation_with_fallback(self, anim, output_file: str, fps: int) -> bool:
+        """Save animation with codec fallback logic."""
+        if not self.ffmpeg_available:
+            print("❌ ffmpeg not available for video creation")
+            return False
+        
+        # Determine codecs to try
+        codecs_to_try = []
+        if 'libx264' in self.available_codecs:
+            codecs_to_try.append('libx264')
+        if 'libxvid' in self.available_codecs:
+            codecs_to_try.append('libxvid')
+        if 'mpeg4' in self.available_codecs:
+            codecs_to_try.append('mpeg4')
+        
+        # If no specific codecs found, try default
+        if not codecs_to_try:
+            codecs_to_try = ['mpeg4']
+        
+        saved_successfully = False
+        for try_codec in codecs_to_try:
+            try:
+                print(f"📹 Trying codec: {try_codec}")
+                anim.save(
+                    output_file,
+                    writer='ffmpeg',
+                    fps=fps,
+                    dpi=72,  # Lower DPI for better performance
+                    bitrate=1000,  # Reasonable bitrate
+                    codec=try_codec
+                )
+                saved_successfully = True
+                print(f"✅ Successfully saved with codec: {try_codec}")
+                break
+            except Exception as e:
+                print(f"❌ Failed with codec {try_codec}: {e}")
+                if try_codec == codecs_to_try[-1]:  # Last codec to try
+                    print(f"❌ Failed to save animation with any available codec. Last error: {e}")
+                    return False
+                continue
+        
+        return saved_successfully
     
     def pre_scan_files(self) -> Tuple[float, float]:
         """Pre-scan all files to determine global data range."""
@@ -128,6 +208,22 @@ class MultiFileAnimator:
     
 
     
+    def get_troubleshooting_tips(self):
+        """Get troubleshooting tips for common issues."""
+        tips = [
+            "1. Make sure your NetCDF files are valid and contain the specified variable",
+            "2. Check that the variable has spatial dimensions (lat/lon or latitude/longitude)",
+            "3. Ensure you have ffmpeg installed for video creation",
+            "4. For geographic animations, make sure you have latitude/longitude coordinates",
+            "5. If you get 'unknown encoder h264' error:",
+            "   - Install ffmpeg with h264 support: brew install ffmpeg (macOS) or apt-get install ffmpeg (Ubuntu)",
+            "   - The script will automatically try alternative codecs (mpeg4, libxvid)",
+            "   - Check available codecs with: ffmpeg -codecs | grep -E '(libx264|libxvid|mpeg4)'",
+            "6. For memory issues, try reducing the number of files or using a smaller subset",
+            "7. Check that all files have the same variable and coordinate structure"
+        ]
+        return tips
+
     def create_animation_sequence(self) -> bool:
         """Create animation from multiple files."""
         print(f"\n🎬 Creating multi-file animation...")
@@ -176,6 +272,9 @@ class MultiFileAnimator:
                 
         except Exception as e:
             print(f"❌ Error creating animation: {e}")
+            print("\nTroubleshooting tips:")
+            for tip in self.get_troubleshooting_tips():
+                print(f"   {tip}")
             return False
     
     def _validate_config(self) -> bool:
@@ -350,10 +449,10 @@ class MultiFileAnimator:
             )
             
             # Save animation
-            anim.save(output_file, writer='ffmpeg', fps=self.config.fps, dpi=72)
+            success = self._save_animation_with_fallback(anim, output_file, self.config.fps)
             plt.close(fig)
             
-            return True
+            return success
             
         except Exception as e:
             print(f"❌ Error creating geographic animation: {e}")
@@ -401,10 +500,10 @@ class MultiFileAnimator:
             )
             
             # Save animation
-            anim.save(output_file, writer='ffmpeg', fps=self.config.fps, dpi=72)
+            success = self._save_animation_with_fallback(anim, output_file, self.config.fps)
             plt.close(fig)
             
-            return True
+            return success
             
         except Exception as e:
             print(f"❌ Error creating heatmap animation: {e}")

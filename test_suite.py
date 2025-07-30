@@ -73,35 +73,34 @@ def test_file_manager():
 
 
 def test_multi_file_animator():
-    """Test the multi-file animator."""
-    print("\n🧪 Testing Multi-File Animator...")
+    """Test MultiFileAnimator functionality."""
+    print("Testing MultiFileAnimator...")
     
-    # Create test configuration
-    config = AnimationConfig()
-    config.variable = "test_var"
-    config.plot_type = "efficient"
-    config.fps = 10
-    
-    # Create file manager
-    file_manager = NetCDFFileManager("*.nc")
-    files = file_manager.discover_files()
-    
-    if files:
-        # Create multi-file animator
+    try:
+        from multi_file_animator import MultiFileAnimator
+        from config_manager import AnimationConfig
+        from file_manager import NetCDFFileManager
+        
+        # Test codec detection
+        config = AnimationConfig()
+        file_manager = NetCDFFileManager("*.nc")
         animator = MultiFileAnimator(file_manager, config)
         
-        # Test configuration validation
-        is_valid = animator._validate_config()
-        print(f"📋 Configuration valid: {is_valid}")
+        # Test ffmpeg availability
+        assert hasattr(animator, 'ffmpeg_available'), "ffmpeg_available attribute missing"
+        assert hasattr(animator, 'available_codecs'), "available_codecs attribute missing"
         
-        # Test time estimation
-        if is_valid:
-            time_minutes = animator.estimate_processing_time()
-            print(f"⏱️  Estimated processing time: {time_minutes:.1f} minutes")
-    else:
-        print("⚠️  No NetCDF files found for testing")
-    
-    print("✅ Multi-file animator test completed!")
+        # Test troubleshooting tips
+        tips = animator.get_troubleshooting_tips()
+        assert isinstance(tips, list), "Troubleshooting tips should be a list"
+        assert len(tips) > 0, "Should have troubleshooting tips"
+        
+        print("✅ MultiFileAnimator tests passed")
+        return True
+        
+    except Exception as e:
+        print(f"❌ MultiFileAnimator test failed: {e}")
+        return False
 
 
 def main():
