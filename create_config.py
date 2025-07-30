@@ -40,7 +40,8 @@ def create_single_file_config(file_path: str, output_file: str = None) -> bool:
             print(f"📏 Dimensions: {dimensions}")
             
             # Find animation dimension
-            spatial_dims = ['lat', 'lon', 'latitude', 'longitude', 'y', 'x', 'nj', 'ni']
+            spatial_dims = ['lat', 'lon', 'latitude', 'longitude', 'y', 'x', 'nj', 'ni', 'nj_u', 'ni_u', 'nj_v', 'ni_v',
+                          'latitude_u', 'longitude_u', 'latitude_v', 'longitude_v']
             animate_dims = [dim for dim in dimensions.keys() if dim not in spatial_dims]
             
             if not animate_dims:
@@ -247,6 +248,149 @@ def create_template_config(output_file: str = "template_config.json"):
     return True
 
 
+def create_standalone_config(output_file: str = None) -> bool:
+    """Create a standalone configuration file with interactive setup."""
+    print(f"\n📝 Creating standalone configuration...")
+    
+    # Create configuration
+    config = AnimationConfig()
+    
+    # Interactive configuration collection
+    print(f"\n⚙️  Configuration Setup")
+    print(f"=" * 40)
+    
+    # File pattern
+    print(f"\n📁 File Pattern:")
+    print("Examples:")
+    print("  - single_file.nc (single file)")
+    print("  - *.nc (all NetCDF files)")
+    print("  - F4C*.nc (files starting with F4C)")
+    print("  - F4C_00.2.SEG01.OUT.*.nc (timestep files)")
+    
+    while True:
+        file_pattern = input(f"\nEnter file pattern (default: *.nc): ").strip()
+        if not file_pattern:
+            file_pattern = "*.nc"
+        config.file_pattern = file_pattern
+        break
+    
+    # Variable name (optional)
+    print(f"\n📊 Variable Name (optional):")
+    print("Common variables:")
+    print("  - InstantaneousRainRate")
+    print("  - Temperature2m")
+    print("  - Windspeed10m")
+    print("  - Salinity")
+    print("  - (or any variable in your NetCDF files)")
+    print("  - (press Enter to skip - you'll set it when running the script)")
+    
+    variable = input(f"\nEnter variable name (optional): ").strip()
+    if variable:
+        config.variable = variable
+    else:
+        print("ℹ️  Variable name will need to be set when running the script")
+        config.variable = None
+    
+    # Plot type selection
+    print(f"\n🎨 Plot types:")
+    print("1. Efficient (fast, imshow with Cartopy) - Recommended")
+    print("2. Contour (detailed with Cartopy)")
+    print("3. Heatmap (simple grid)")
+    
+    while True:
+        try:
+            choice = input("Select plot type (1-3): ").strip()
+            plot_types = ['efficient', 'contour', 'heatmap']
+            plot_idx = int(choice) - 1
+            if 0 <= plot_idx < 3:
+                config.plot_type = plot_types[plot_idx]
+                break
+            else:
+                print("❌ Please enter a number between 1 and 3")
+        except ValueError:
+            print("❌ Please enter a valid number")
+    
+    # FPS selection
+    while True:
+        try:
+            fps_input = input(f"\nFrames per second (default: {config.fps}): ").strip()
+            if not fps_input:
+                break
+            fps = int(fps_input)
+            if 1 <= fps <= 60:
+                config.fps = fps
+                break
+            else:
+                print("❌ FPS must be between 1 and 60")
+        except ValueError:
+            print("❌ Please enter a valid number")
+    
+    # Output settings
+    if config.variable:
+        default_output = f"{config.variable}_{config.plot_type}_animation.{config.output_format}"
+    else:
+        default_output = f"animation_{config.plot_type}.{config.output_format}"
+    
+    output_filename = input(f"\nOutput filename (default: {default_output}): ").strip()
+    if output_filename:
+        config.output_pattern = output_filename
+    else:
+        config.output_pattern = default_output
+    
+    # Advanced settings
+    print(f"\n⚙️  Advanced settings:")
+    
+    # Animation dimension
+    animate_dim = input(f"\nAnimation dimension (default: {config.animate_dim}): ").strip()
+    if animate_dim:
+        config.animate_dim = animate_dim
+    
+    # Percentile filtering
+    while True:
+        try:
+            percentile_input = input(f"Percentile threshold for filtering (default: {config.percentile}): ").strip()
+            if not percentile_input:
+                break
+            percentile = int(percentile_input)
+            if 0 <= percentile <= 100:
+                config.percentile = percentile
+                break
+            else:
+                print("❌ Percentile must be between 0 and 100")
+        except ValueError:
+            print("❌ Please enter a valid number")
+    
+    # Level index (optional)
+    level_choice = input(f"\nLevel index (optional, press Enter to skip): ").strip()
+    if level_choice:
+        try:
+            config.level_index = int(level_choice)
+        except ValueError:
+            print("❌ Invalid level index, skipping...")
+    
+    # Global colorbar
+    global_cb = input("Use consistent colorbar across all files? (y/n, default: y): ").strip().lower()
+    if global_cb in ['n', 'no']:
+        config.global_colorbar = False
+    
+    # Pre-scan files
+    pre_scan = input("Pre-scan files for global data range? (y/n, default: y): ").strip().lower()
+    if pre_scan in ['n', 'no']:
+        config.pre_scan_files = False
+    
+    # Save configuration
+    config_manager = ConfigManager()
+    config_manager.set_config(config)
+    
+    if output_file:
+        config_manager.save_config(output_file)
+    else:
+        config_manager.save_config()
+    
+    print(f"\n✅ Standalone configuration created successfully!")
+    return True
+
+
 def main():
     """Main function for configuration creation."""
     parser = argparse.ArgumentParser(
@@ -254,6 +398,9 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
+  # Create standalone config (interactive)
+  python create_config.py
+  
   # Create config for single file
   python create_config.py single_file.nc --output my_config.json
   
@@ -289,7 +436,13 @@ Examples:
         return
     
     if not args.input:
-        print("❌ Please provide a file or pattern, or use --template for a template")
+        # Create standalone configuration
+        success = create_standalone_config(args.output)
+        if success:
+            print(f"\n🎉 Configuration created successfully!")
+            print(f"💡 Use it with: python main.py --config {args.output or 'animation_config.json'}")
+        else:
+            print(f"\n❌ Failed to create configuration")
         return
     
     # Determine if this is a multi-file pattern

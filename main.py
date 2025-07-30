@@ -40,7 +40,8 @@ class UnifiedAnimator:
         # Find the first dimension that's not spatial (not lat/lon)
         animate_dim = None
         for dim in self.ds.dims:
-            if dim not in ['lat', 'lon', 'latitude', 'longitude', 'y', 'x', 'nj', 'ni']:
+            if dim not in ['lat', 'lon', 'latitude', 'longitude', 'y', 'x', 'nj', 'ni', 'nj_u', 'ni_u', 'nj_v', 'ni_v',
+                          'latitude_u', 'longitude_u', 'latitude_v', 'longitude_v']:
                 animate_dim = dim
                 break
         if animate_dim:
@@ -208,16 +209,22 @@ class UnifiedAnimator:
     def select_level_interactive(self, variable):
         """Interactively select a level for 3D data."""
         # Check if the variable has a level dimension
-        if 'level' not in self.ds[variable].dims:
+        level_dim = None
+        if 'level' in self.ds[variable].dims:
+            level_dim = 'level'
+        elif 'level_w' in self.ds[variable].dims:
+            level_dim = 'level_w'
+        
+        if level_dim is None:
             return None
         
-        level_count = len(self.ds.level)
-        print(f"\n📊 Variable '{variable}' has {level_count} levels")
+        level_count = len(self.ds[level_dim])
+        print(f"\n📊 Variable '{variable}' has {level_count} levels (dimension: {level_dim})")
         
         # Always show all levels
         print("Available levels:")
         for i in range(level_count):
-            level_val = self.ds.level[i].values
+            level_val = self.ds[level_dim][i].values
             print(f"  {i}: {level_val}")
         
         while True:
@@ -247,16 +254,16 @@ class UnifiedAnimator:
         
         return filtered_data
     
-    def prepare_data_for_plotting(self, variable, time_step=0, animate_dim='time', level_index=None):
-        """Prepare data for plotting by handling extra dimensions."""
-
+    def prepare_data_for_plotting(self, variable, time_step=0, animate_dim='time', level_index=None, zoom_factor=1.0, verbose=True):
+        """Prepare data for plotting by handling extra dimensions and zooming."""
         
         # Get the data array
         data_array = self.ds[variable].isel({animate_dim: time_step})
         
         # Handle multiple non-spatial dimensions
         # Define spatial dimensions
-        spatial_dims = ['lat', 'lon', 'latitude', 'longitude', 'y', 'x', 'nj', 'ni']
+        spatial_dims = ['lat', 'lon', 'latitude', 'longitude', 'y', 'x', 'nj', 'ni', 'nj_u', 'ni_u', 'nj_v', 'ni_v', 
+                       'latitude_u', 'longitude_u', 'latitude_v', 'longitude_v']
         
         # Find which dimensions are spatial
         spatial_dims_in_data = [dim for dim in data_array.dims if dim in spatial_dims]
@@ -267,22 +274,27 @@ class UnifiedAnimator:
             non_spatial_dims = [dim for dim in data_array.dims if dim not in spatial_dims]
             
             if non_spatial_dims:
-                print(f"📊 Reducing {len(data_array.dims)}D data to 2D")
+                if verbose:
+                    print(f"📊 Reducing {len(data_array.dims)}D data to 2D")
                 
                 # If level_index is specified, select that level
-                if level_index is not None and 'level' in non_spatial_dims:
-                    print(f"📊 Selecting level {level_index}")
+                if level_index is not None and ('level' in non_spatial_dims or 'level_w' in non_spatial_dims):
+                    level_dim = 'level' if 'level' in non_spatial_dims else 'level_w'
+                    if verbose:
+                        print(f"📊 Selecting level {level_index} from dimension {level_dim}")
                     try:
-                        data_array = data_array.isel(level=level_index)
-                        non_spatial_dims.remove('level')
+                        data_array = data_array.isel({level_dim: level_index})
+                        non_spatial_dims.remove(level_dim)
                     except Exception as e:
-                        print(f"❌ Error selecting level {level_index}: {e}")
-                        print(f"Available level indices: 0 to {len(self.ds.level)-1}")
+                        print(f"❌ Error selecting level {level_index} from {level_dim}: {e}")
+                        if level_dim in self.ds.dims:
+                            print(f"Available level indices: 0 to {len(self.ds[level_dim])-1}")
                         raise
                 
                 # Average over remaining non-spatial dimensions
                 for dim in non_spatial_dims:
-                    print(f"📊 Averaging over dimension: {dim}")
+                    if verbose:
+                        print(f"📊 Averaging over dimension: {dim}")
                     data_array = data_array.mean(dim=dim)
         
         # Squeeze out any remaining singleton dimensions
@@ -313,11 +325,93 @@ class UnifiedAnimator:
                 lats = coords['lat'].values
                 lons = coords['lon'].values
             else:
-                # Fallback: create coordinate arrays based on data shape
-                lats = np.arange(data.shape[0])
-                lons = np.arange(data.shape[1])
+                # Check for other coordinate names that might be in the dataset
+                available_coords = list(self.ds.coords.keys())
+                print(f"📊 Available coordinates: {available_coords}")
+                
+                # Look for any coordinate that might be spatial
+                spatial_coords = []
+                for coord_name in available_coords:
+                    coord = self.ds[coord_name]
+                    if len(coord.shape) == 1 and coord.shape[0] in [data.shape[0], data.shape[1]]:
+                        spatial_coords.append(coord_name)
+                
+                if len(spatial_coords) >= 2:
+                    # Use the first two spatial coordinates found
+                    coord1 = self.ds[spatial_coords[0]].values
+                    coord2 = self.ds[spatial_coords[1]].values
+                    
+                    # Determine which is lat/lon based on typical ranges
+                    if np.max(coord1) > np.max(coord2):
+                        lats = coord2
+                        lons = coord1
+                    else:
+                        lats = coord1
+                        lons = coord2
+                    
+                    print(f"📊 Using coordinates: {spatial_coords[0]} and {spatial_coords[1]}")
+                else:
+                    # Fallback: create coordinate arrays based on data shape
+                    print(f"⚠️  No spatial coordinates found, using array indices")
+                    lats = np.arange(data.shape[0])
+                    lons = np.arange(data.shape[1])
+        
+        # Apply zoom factor if specified
+        if zoom_factor != 1.0:
+            data, lats, lons = self._apply_zoom(data, lats, lons, zoom_factor)
         
         return data, lats, lons
+    
+    def _apply_zoom(self, data, lats, lons, zoom_factor):
+        """Apply zoom factor to crop the domain."""
+        if zoom_factor <= 0:
+            raise ValueError("Zoom factor must be positive")
+        
+        if zoom_factor == 1.0:
+            return data, lats, lons
+        
+        # Calculate new dimensions
+        original_height, original_width = data.shape
+        
+        # For zoom_factor > 1, we crop the domain
+        # For zoom_factor < 1, we expand the domain (not typically useful)
+        if zoom_factor > 1.0:
+            # Calculate new dimensions (crop)
+            new_height = int(original_height / zoom_factor)
+            new_width = int(original_width / zoom_factor)
+            
+            # Calculate crop boundaries (center the crop)
+            start_row = (original_height - new_height) // 2
+            end_row = start_row + new_height
+            start_col = (original_width - new_width) // 2
+            end_col = start_col + new_width
+            
+            # Only print zoom info once per animation
+            if not hasattr(self, '_zoom_applied'):
+                print(f"🔍 Applying zoom factor {zoom_factor:.2f}")
+                print(f"   Original size: {original_width} x {original_height}")
+                print(f"   Cropped size: {new_width} x {new_height}")
+                print(f"   Crop boundaries: rows {start_row}:{end_row}, cols {start_col}:{end_col}")
+                self._zoom_applied = True
+            
+            # Crop data
+            cropped_data = data[start_row:end_row, start_col:end_col]
+            
+            # Crop coordinates
+            if len(lats.shape) == 2:
+                # 2D coordinates
+                cropped_lats = lats[start_row:end_row, start_col:end_col]
+                cropped_lons = lons[start_row:end_row, start_col:end_col]
+            else:
+                # 1D coordinates
+                cropped_lats = lats[start_row:end_row]
+                cropped_lons = lons[start_col:end_col]
+            
+            return cropped_data, cropped_lats, cropped_lons
+        else:
+            # For zoom_factor < 1, we could expand the domain, but this is less common
+            print(f"⚠️  Zoom factor {zoom_factor} < 1.0, using original domain")
+            return data, lats, lons
     
     def explore_dataset(self):
         """Explore and display dataset information."""
@@ -379,34 +473,35 @@ class UnifiedAnimator:
         print(f"  Available codecs: {codec_info['available_codecs']}")
         print(f"  Recommended codec: {codec_info['recommended_codec']}")
     
-    def create_single_plot(self, variable, plot_type='efficient', time_step=0, animate_dim='time', level_index=None):
+    def create_single_plot(self, variable, plot_type='efficient', time_step=0, animate_dim='time', level_index=None, zoom_factor=1.0):
         """Create a single plot for preview."""
         print(f"\n📊 Creating {plot_type} plot for {variable} at time step {time_step}...")
         
         if plot_type == 'efficient':
-            fig = self._create_efficient_plot(variable, time_step, animate_dim, level_index)
+            fig = self._create_efficient_plot(variable, time_step, animate_dim, level_index, zoom_factor)
         elif plot_type == 'contour':
-            fig = self._create_contour_plot(variable, time_step, animate_dim, level_index)
+            fig = self._create_contour_plot(variable, time_step, animate_dim, level_index, zoom_factor)
         elif plot_type == 'heatmap':
-            fig = self._create_heatmap_plot(variable, time_step, animate_dim, level_index)
+            fig = self._create_heatmap_plot(variable, time_step, animate_dim, level_index, zoom_factor)
         else:
             print(f"❌ Unknown plot type: {plot_type}")
             return None
         
         # Save plot instead of showing in non-interactive mode
-        output_file = f"{variable}_{plot_type}_plot.png"
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_file = f"{timestamp}_{variable}_{plot_type}_plot.png"
         plt.savefig(output_file, dpi=150, bbox_inches='tight')
         print(f"📊 Plot saved: {output_file}")
         plt.close(fig)
         return fig
     
-    def _create_efficient_plot(self, variable, time_step=0, animate_dim='time', level_index=None):
+    def _create_efficient_plot(self, variable, time_step=0, animate_dim='time', level_index=None, zoom_factor=1.0):
         """Create an efficient single plot with Cartopy."""
         fig, ax = plt.subplots(figsize=(15, 10), 
                               subplot_kw={'projection': ccrs.PlateCarree()})
         
         # Get data and coordinates using the helper method
-        data, lats, lons = self.prepare_data_for_plotting(variable, time_step, animate_dim, level_index)
+        data, lats, lons = self.prepare_data_for_plotting(variable, time_step, animate_dim, level_index, zoom_factor)
         
         # Filter low values
         filtered_data = self.filter_low_values(data)
@@ -446,13 +541,13 @@ class UnifiedAnimator:
         plt.tight_layout()
         return fig
     
-    def _create_contour_plot(self, variable, time_step=0, animate_dim='time', level_index=None):
+    def _create_contour_plot(self, variable, time_step=0, animate_dim='time', level_index=None, zoom_factor=1.0):
         """Create a contour single plot with Cartopy."""
         fig, ax = plt.subplots(figsize=(15, 10), 
                               subplot_kw={'projection': ccrs.PlateCarree()})
         
         # Get data and coordinates using the helper method
-        data, lats, lons = self.prepare_data_for_plotting(variable, time_step, animate_dim, level_index)
+        data, lats, lons = self.prepare_data_for_plotting(variable, time_step, animate_dim, level_index, zoom_factor)
         
         # Filter low values
         filtered_data = self.filter_low_values(data)
@@ -492,12 +587,12 @@ class UnifiedAnimator:
         plt.tight_layout()
         return fig
     
-    def _create_heatmap_plot(self, variable, time_step=0, animate_dim='time', level_index=None):
+    def _create_heatmap_plot(self, variable, time_step=0, animate_dim='time', level_index=None, zoom_factor=1.0):
         """Create a simple heatmap plot."""
         fig, ax = plt.subplots(figsize=(12, 8))
         
         # Get data using the helper method
-        data, _, _ = self.prepare_data_for_plotting(variable, time_step, animate_dim, level_index)
+        data, _, _ = self.prepare_data_for_plotting(variable, time_step, animate_dim, level_index, zoom_factor)
         
         # Filter low values
         filtered_data = self.filter_low_values(data)
@@ -524,10 +619,16 @@ class UnifiedAnimator:
         return fig
     
     def create_direct_animation(self, variable, output_file=None, fps=10, 
-                              plot_type='efficient', title=None, animate_dim='time', level_index=None):
+                              plot_type='efficient', title=None, animate_dim='time', level_index=None, zoom_factor=1.0):
         """Create a direct animation (no individual frames)."""
         if output_file is None:
-            output_file = f'{variable}_{plot_type}_animation.mp4'
+            # Add timestamp to prevent overwriting
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_file = f'{timestamp}_{variable}_{plot_type}_animation.mp4'
+        
+        # Reset zoom flag for this animation
+        if hasattr(self, '_zoom_applied'):
+            delattr(self, '_zoom_applied')
         
         if not self.ffmpeg_available:
             print("❌ ffmpeg not available. Cannot create video.")
@@ -555,13 +656,23 @@ class UnifiedAnimator:
         except Exception as e:
             print(f"Warning: Could not calculate full data range: {e}")
             # Use a sample of the data for range calculation
-            sample_data, _, _ = self.prepare_data_for_plotting(variable, 0, animate_dim, level_index)
+            sample_data, _, _ = self.prepare_data_for_plotting(variable, 0, animate_dim, level_index, verbose=False)
             filtered_sample = self.filter_low_values(sample_data)
             data_min = np.nanmin(filtered_sample)
             data_max = np.nanmax(filtered_sample)
         
-        # Get coordinates using helper method
-        _, lats, lons = self.prepare_data_for_plotting(variable, 0, animate_dim, level_index)
+                            # Get coordinates using helper method
+        try:
+            _, lats, lons = self.prepare_data_for_plotting(variable, 0, animate_dim, level_index, zoom_factor, verbose=False)
+        except Exception as e:
+            print(f"❌ Error preparing data: {e}")
+            # Fallback: create coordinate arrays based on data shape
+            data_shape = self.ds[variable].shape
+            if len(data_shape) >= 2:
+                lats = np.arange(data_shape[-2])
+                lons = np.arange(data_shape[-1])
+            else:
+                raise ValueError(f"Cannot determine coordinates for variable {variable}")
         
         # Create figure and axis based on plot type
         if plot_type in ['efficient', 'contour']:
@@ -583,7 +694,7 @@ class UnifiedAnimator:
             
             if plot_type == 'efficient':
                 # Initialize efficient plot
-                initial_data, _, _ = self.prepare_data_for_plotting(variable, 0, animate_dim, level_index)
+                initial_data, _, _ = self.prepare_data_for_plotting(variable, 0, animate_dim, level_index, zoom_factor, verbose=False)
                 filtered_initial_data = self.filter_low_values(initial_data)
                 im = ax.imshow(filtered_initial_data, cmap='Blues', alpha=0.8,
                               extent=[lons.min(), lons.max(), lats.min(), lats.max()],
@@ -596,7 +707,7 @@ class UnifiedAnimator:
                 
             else:  # contour
                 # Initialize contour plot
-                initial_data, _, _ = self.prepare_data_for_plotting(variable, 0, animate_dim, level_index)
+                initial_data, _, _ = self.prepare_data_for_plotting(variable, 0, animate_dim, level_index, zoom_factor, verbose=False)
                 filtered_initial_data = self.filter_low_values(initial_data)
                 levels = np.linspace(data_min, data_max, 20)
                 contour = ax.contourf(lons, lats, filtered_initial_data, levels=levels, cmap='Blues',
@@ -613,7 +724,7 @@ class UnifiedAnimator:
             fig, ax = plt.subplots(figsize=(12, 8))
             
             # Initialize heatmap plot
-            initial_data, _, _ = self.prepare_data_for_plotting(variable, 0, animate_dim, level_index)
+            initial_data, _, _ = self.prepare_data_for_plotting(variable, 0, animate_dim, level_index, zoom_factor, verbose=False)
             filtered_initial_data = self.filter_low_values(initial_data)
             im = ax.imshow(filtered_initial_data, cmap='Blues', aspect='auto',
                           vmin=data_min, vmax=data_max)
@@ -649,7 +760,7 @@ class UnifiedAnimator:
                     print(f"📊 Frame {frame_count}/{max_frames}, Memory: {current_memory:.1f} MB")
                 
                 # Get data for current frame using helper method
-                data, _, _ = self.prepare_data_for_plotting(variable, frame, animate_dim, level_index)
+                data, _, _ = self.prepare_data_for_plotting(variable, frame, animate_dim, level_index, zoom_factor, verbose=False)
                 filtered_data = self.filter_low_values(data)
                 
                 # Update title and subtitle
@@ -752,7 +863,7 @@ class UnifiedAnimator:
         import gc
         gc.collect()
     
-    def create_batch_animations(self, plot_type='efficient', fps=10, animate_dim='time', level_index=None):
+    def create_batch_animations(self, plot_type='efficient', fps=10, animate_dim='time', level_index=None, zoom_factor=1.0):
         """Create animations for all variables."""
         print(f"\n🎬 Creating {plot_type} animations for all variables...")
         
@@ -764,8 +875,10 @@ class UnifiedAnimator:
             print(f"\n🎬 Creating animation for {var_name}...")
             
             try:
-                output_file = f"{var_name}_{plot_type}_animation.mp4"
-                self.create_direct_animation(var_name, output_file, fps, plot_type, animate_dim=animate_dim, level_index=level_index)
+                # Add timestamp to prevent overwriting
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                output_file = f"{timestamp}_{var_name}_{plot_type}_animation.mp4"
+                self.create_direct_animation(var_name, output_file, fps, plot_type, animate_dim=animate_dim, level_index=level_index, zoom_factor=zoom_factor)
                 print(f"✅ Created: {output_file}")
                 successful += 1
                 
@@ -871,6 +984,9 @@ Examples:
     parser.add_argument('--level', '-l', type=int,
                        help='Level index for 3D data (use -1 for average over levels)')
     
+    parser.add_argument('--zoom', '-z', type=float, default=1.0,
+                       help='Zoom factor for cropping domain (default: 1.0, no zoom)')
+    
     parser.add_argument('--no-interactive', action='store_true',
                        help='Skip interactive mode and use command line arguments only')
     
@@ -902,9 +1018,38 @@ Examples:
         print(f"⚠️  Multi-file components not available: {e}")
         MULTI_FILE_AVAILABLE = False
     
+    # Initialize configuration manager
+    config_manager = ConfigManager()
+    
+    # Auto-load configuration if it exists and no config is specified
+    if not args.config and os.path.exists('animation_config.json'):
+        print("📁 Found animation_config.json, loading configuration...")
+        if config_manager.load_config():
+            config = config_manager.get_config()
+            print(f"✅ Loaded configuration from animation_config.json")
+            print(f"   Variable: {config.variable}")
+            print(f"   Plot type: {config.plot_type}")
+            print(f"   FPS: {config.fps}")
+        else:
+            print("⚠️  Failed to load animation_config.json")
+            config = None
+    elif args.config:
+        # Load specified config file
+        print(f"📁 Loading configuration from {args.config}...")
+        if config_manager.load_config():
+            config = config_manager.get_config()
+            print(f"✅ Loaded configuration from {args.config}")
+            print(f"   Variable: {config.variable}")
+            print(f"   Plot type: {config.plot_type}")
+            print(f"   FPS: {config.fps}")
+        else:
+            print(f"⚠️  Failed to load {args.config}")
+            config = None
+    else:
+        config = None
+    
     # Determine if this is a multi-file pattern
-    is_multi_file = ('*' in args.input_pattern or '?' in args.input_pattern or 
-                     args.input_pattern.endswith('.nc') and os.path.isdir(os.path.dirname(args.input_pattern) or '.'))
+    is_multi_file = ('*' in args.input_pattern or '?' in args.input_pattern)
     
     # For multi-file patterns, we need the multi-file components
     if is_multi_file and not MULTI_FILE_AVAILABLE:
@@ -968,12 +1113,23 @@ Examples:
             config.percentile = args.percentile
         if args.type != 'efficient':
             config.plot_type = args.type
+        if args.zoom != 1.0:
+            config.zoom_factor = args.zoom
         if args.overwrite:
             config.overwrite_existing = True
         if not args.pre_scan:
             config.pre_scan_files = False
         if not args.global_colorbar:
             config.global_colorbar = False
+        
+        # Check if variable is set (either in config or command line)
+        if not config.variable:
+            print("❌ No variable specified. Please set --variable or update your configuration file.")
+            print("💡 Available variables:")
+            common_vars = file_manager.get_common_variables()
+            for i, var in enumerate(common_vars, 1):
+                print(f"  {i}. {var}")
+            return
         
         # Save configuration if requested
         if args.save_config:
@@ -1013,7 +1169,8 @@ Examples:
 
         # Validate or auto-select animate_dim
         ds_dims = list(animator.ds.dims)
-        spatial_dims = ['lat', 'lon', 'latitude', 'longitude', 'y', 'x', 'nj', 'ni']
+        spatial_dims = ['lat', 'lon', 'latitude', 'longitude', 'y', 'x', 'nj', 'ni', 'nj_u', 'ni_u', 'nj_v', 'ni_v',
+                       'latitude_u', 'longitude_u', 'latitude_v', 'longitude_v']
         candidate_dims = [d for d in ds_dims if d not in spatial_dims]
 
         animate_dim = args.animate_dim
@@ -1047,6 +1204,16 @@ Examples:
                 print(f"📊 Will use level {level_index}")
 
         
+        # Check if variable is required but not provided
+        if args.no_interactive and not args.variable and not args.batch:
+            print("❌ No variable specified. Please set --variable or use interactive mode.")
+            print("💡 Available variables:")
+            var_info = animator.get_variable_info()
+            for i, (var_name, info) in enumerate(var_info.items(), 1):
+                units = info['attrs'].get('units', 'N/A')
+                print(f"  {i}. {var_name} (units: {units})")
+            return
+        
         # If all required arguments are provided, run in non-interactive mode
         if args.no_interactive or (args.variable and (args.batch or args.plot or not args.no_interactive)):
             if args.batch:
@@ -1054,7 +1221,7 @@ Examples:
                 print(f"\n🎬 Creating batch animations...")
                 print(f"Type: {args.type}")
                 print(f"FPS: {args.fps}")
-                animator.create_batch_animations(args.type, args.fps, animate_dim, level_index)
+                animator.create_batch_animations(args.type, args.fps, animate_dim, level_index, args.zoom)
                 
             elif args.plot:
                 # Single plot mode
@@ -1062,18 +1229,23 @@ Examples:
                 print(f"Variable: {args.variable}")
                 print(f"Type: {args.type}")
                 print(f"Time step: {args.time_step}")
-                animator.create_single_plot(args.variable, args.type, args.time_step, animate_dim, level_index)
+                animator.create_single_plot(args.variable, args.type, args.time_step, animate_dim, level_index, args.zoom)
                 
             else:
                 # Single animation mode
-                output_file = args.output or f"{args.variable}_{args.type}_animation.mp4"
+                if args.output:
+                    output_file = args.output
+                else:
+                    # Add timestamp to prevent overwriting
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    output_file = f"{timestamp}_{args.variable}_{args.type}_animation.mp4"
                 print(f"\n🎬 Creating single animation...")
                 print(f"Variable: {args.variable}")
                 print(f"Type: {args.type}")
                 print(f"Output: {output_file}")
                 print(f"FPS: {args.fps}")
                 print(f"Total frames: {len(animator.ds[animate_dim])}")
-                animator.create_direct_animation(args.variable, output_file, args.fps, args.type, animate_dim=animate_dim, level_index=level_index)
+                animator.create_direct_animation(args.variable, output_file, args.fps, args.type, animate_dim=animate_dim, level_index=level_index, zoom_factor=args.zoom)
             
             # Clean up
             animator.close()
@@ -1082,6 +1254,98 @@ Examples:
         # Interactive mode
         # Explore dataset
         animator.explore_dataset()
+        
+        # Check if we have loaded configuration
+        if config:
+            print(f"\n📁 Configuration loaded")
+            print(f"   Variable: {config.variable}")
+            print(f"   Plot type: {config.plot_type}")
+            print(f"   FPS: {config.fps}")
+            
+            # Prompt for missing required fields
+            config_updated = False
+            
+            # Check for missing variable
+            if not config.variable:
+                print(f"\n📊 Variable not set in configuration. Available variables:")
+                var_info = animator.get_variable_info()
+                for i, (var_name, info) in enumerate(var_info.items(), 1):
+                    units = info['attrs'].get('units', 'N/A')
+                    print(f"  {i}. {var_name} (units: {units})")
+                
+                while True:
+                    try:
+                        var_choice = input(f"\nSelect variable number (1-{len(var_info)}): ").strip()
+                        var_idx = int(var_choice) - 1
+                        if 0 <= var_idx < len(var_info):
+                            config.variable = list(var_info.keys())[var_idx]
+                            config_updated = True
+                            break
+                        else:
+                            print(f"❌ Please enter a number between 1 and {len(var_info)}")
+                    except ValueError:
+                        print("❌ Please enter a valid number")
+            
+            # Check for missing plot type
+            if not config.plot_type:
+                print(f"\n🎨 Plot type not set in configuration. Available types:")
+                print("1. Efficient (fast, imshow with Cartopy) - Recommended")
+                print("2. Contour (detailed with Cartopy)")
+                print("3. Heatmap (simple grid)")
+                
+                while True:
+                    try:
+                        type_choice = input("Select plot type (1-3): ").strip()
+                        plot_types = ['efficient', 'contour', 'heatmap']
+                        type_idx = int(type_choice) - 1
+                        if 0 <= type_idx < 3:
+                            config.plot_type = plot_types[type_idx]
+                            config_updated = True
+                            break
+                        else:
+                            print("❌ Please enter a number between 1 and 3")
+                    except ValueError:
+                        print("❌ Please enter a valid number")
+            
+            # Update output pattern if variable was set
+            if config_updated and config.variable and config.plot_type:
+                config.output_pattern = f"{config.variable}_{config.plot_type}_animation.{config.output_format}"
+                print(f"📝 Updated output pattern: {config.output_pattern}")
+            
+            # Ask if user wants to use loaded configuration
+            use_config = input(f"\nUse loaded configuration? (y/n, default: y): ").strip().lower()
+            if use_config in ['', 'y', 'yes']:
+                # Use configuration to create animation directly
+                print(f"\n🎬 Creating animation with loaded configuration...")
+                
+                # Set up parameters from config
+                variable = config.variable
+                plot_type = config.plot_type
+                fps = config.fps
+                output_file = config.output_pattern
+                
+                # Update percentile filter if specified in config
+                if config.percentile != 5:
+                    original_filter = animator.filter_low_values
+                    def custom_filter(data, percentile=config.percentile):
+                        return original_filter(data, percentile)
+                    animator.filter_low_values = custom_filter
+                
+                # Handle level selection from config
+                level_index = config.level_index
+                
+                # Create animation
+                print(f"Variable: {variable}")
+                print(f"Type: {plot_type}")
+                print(f"Output: {output_file}")
+                print(f"FPS: {fps}")
+                print(f"Total frames: {len(animator.ds[animate_dim])}")
+                
+                animator.create_direct_animation(variable, output_file, fps, plot_type, animate_dim=animate_dim, level_index=level_index)
+                
+                # Clean up
+                animator.close()
+                return
         
         # Show main menu
         print("\n" + "=" * 60)
@@ -1135,8 +1399,22 @@ Examples:
             if 'level' in animator.ds[variable].dims:
                 level_index = animator.select_level_interactive(variable)
             
+            # Get zoom factor
+            zoom_input = input("Zoom factor (default: 1.0, no zoom): ").strip()
+            if not zoom_input:
+                zoom_factor = 1.0
+            else:
+                try:
+                    zoom_factor = float(zoom_input)
+                    if zoom_factor <= 0:
+                        print("❌ Zoom factor must be positive. Using 1.0 (no zoom)")
+                        zoom_factor = 1.0
+                except ValueError:
+                    print("❌ Invalid zoom factor. Using 1.0 (no zoom)")
+                    zoom_factor = 1.0
+            
             # Create plot
-            animator.create_single_plot(variable, plot_type, animate_dim=animate_dim, level_index=level_index)
+            animator.create_single_plot(variable, plot_type, animate_dim=animate_dim, level_index=level_index, zoom_factor=zoom_factor)
             
         elif choice == "2":
             # Single animation
@@ -1184,21 +1462,40 @@ Examples:
             if not fps:
                 fps = 10
             else:
-                fps = int(fps)
+                try:
+                    fps = int(fps)
+                except ValueError:
+                    print(f"❌ Invalid FPS value: {fps}. Using default: 10")
+                    fps = 10
             
             # Select level if variable has level dimension
             level_index = None
             if 'level' in animator.ds[variable].dims:
                 level_index = animator.select_level_interactive(variable)
             
+            # Get zoom factor
+            zoom_input = input("Zoom factor (default: 1.0, no zoom): ").strip()
+            if not zoom_input:
+                zoom_factor = 1.0
+            else:
+                try:
+                    zoom_factor = float(zoom_input)
+                    if zoom_factor <= 0:
+                        print("❌ Zoom factor must be positive. Using 1.0 (no zoom)")
+                        zoom_factor = 1.0
+                except ValueError:
+                    print("❌ Invalid zoom factor. Using 1.0 (no zoom)")
+                    zoom_factor = 1.0
+            
             # Create animation
             print(f"\n🎬 Creating {anim_type} animation...")
             print(f"Variable: {variable}")
             print(f"Output: {output_file}")
             print(f"FPS: {fps}")
+            print(f"Zoom factor: {zoom_factor}")
             print(f"Total frames: {len(animator.ds[animate_dim])}")
             
-            animator.create_direct_animation(variable, output_file, fps, anim_type, title=None, animate_dim=animate_dim, level_index=level_index)
+            animator.create_direct_animation(variable, output_file, fps, anim_type, title=None, animate_dim=animate_dim, level_index=level_index, zoom_factor=zoom_factor)
             
         elif choice == "3":
             # Batch animations
@@ -1226,7 +1523,11 @@ Examples:
             if not fps:
                 fps = 10
             else:
-                fps = int(fps)
+                try:
+                    fps = int(fps)
+                except ValueError:
+                    print(f"❌ Invalid FPS value: {fps}. Using default: 10")
+                    fps = 10
             
             # Check if any variable has level dimension
             level_index = None
@@ -1246,8 +1547,22 @@ Examples:
                 else:
                     level_index = None  # Average over levels
             
+            # Get zoom factor
+            zoom_input = input("Zoom factor (default: 1.0, no zoom): ").strip()
+            if not zoom_input:
+                zoom_factor = 1.0
+            else:
+                try:
+                    zoom_factor = float(zoom_input)
+                    if zoom_factor <= 0:
+                        print("❌ Zoom factor must be positive. Using 1.0 (no zoom)")
+                        zoom_factor = 1.0
+                except ValueError:
+                    print("❌ Invalid zoom factor. Using 1.0 (no zoom)")
+                    zoom_factor = 1.0
+            
             # Create batch animations
-            animator.create_batch_animations(anim_type, fps, animate_dim, level_index)
+            animator.create_batch_animations(anim_type, fps, animate_dim, level_index, zoom_factor)
             
         elif choice == "4":
             print("Goodbye!")

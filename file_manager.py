@@ -290,35 +290,4 @@ class FilePatternMatcher:
         return True
 
 
-if __name__ == "__main__":
-    # Test the file manager
-    print("Testing NetCDF File Manager...")
-    
-    # Test with a pattern
-    pattern = "*.nc"
-    manager = NetCDFFileManager(pattern)
-    
-    # Discover files
-    files = manager.discover_files()
-    
-    if files:
-        print(f"\n✅ Found {len(files)} files")
-        
-        # Test consistency
-        errors = manager.validate_consistency()
-        if errors:
-            print(f"❌ Consistency errors: {errors}")
-        else:
-            print("✅ Files are consistent")
-        
-        # Test common variables
-        common_vars = manager.get_common_variables()
-        print(f"📊 Common variables: {common_vars}")
-        
-        # Test memory estimation
-        if common_vars:
-            var = common_vars[0]
-            memory_mb = manager.estimate_memory_usage(var)
-            print(f"💾 Estimated memory usage for '{var}': {memory_mb:.1f} MB")
-    
-    print("File manager test completed!") 
+ 

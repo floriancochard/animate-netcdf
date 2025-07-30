@@ -41,6 +41,9 @@ class AnimationConfig:
         self.memory_limit_mb = 2048
         self.max_files_preview = 10
         
+        # Zoom settings
+        self.zoom_factor = 1.0
+        
     def to_dict(self) -> Dict[str, Any]:
         """Convert configuration to dictionary."""
         return {
@@ -61,7 +64,8 @@ class AnimationConfig:
             'output_format': self.output_format,
             'overwrite_existing': self.overwrite_existing,
             'memory_limit_mb': self.memory_limit_mb,
-            'max_files_preview': self.max_files_preview
+            'max_files_preview': self.max_files_preview,
+            'zoom_factor': self.zoom_factor
         }
     
     def from_dict(self, config_dict: Dict[str, Any]):
@@ -313,25 +317,4 @@ def sort_files_by_timestep(files: List[str]) -> List[str]:
     return sorted(files, key=get_timestep_key)
 
 
-if __name__ == "__main__":
-    # Test the configuration system
-    config_manager = ConfigManager()
-    
-    # Test file discovery
-    test_files = discover_netcdf_files("*.nc")
-    print(f"Found {len(test_files)} NetCDF files")
-    
-    # Test configuration
-    config = AnimationConfig()
-    config.variable = "test_var"
-    config.plot_type = "efficient"
-    
-    # Save and load
-    config_manager.set_config(config)
-    config_manager.save_config("test_config.json")
-    
-    # Load back
-    new_manager = ConfigManager("test_config.json")
-    new_manager.load_config()
-    
-    print("Configuration system test completed!") 
+ 

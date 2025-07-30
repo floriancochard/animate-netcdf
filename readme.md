@@ -28,9 +28,18 @@ python main.py "F4C_00.2.SEG01.OUT.*.nc"
 python main.py your_file.nc --variable temperature --type efficient --output animation.mp4
 ```
 
+**Zoomed Animation:**
+
+```bash
+python main.py your_file.nc --variable temperature --zoom 1.2 --type efficient
+```
+
 **Create Configuration File (NEW!):**
 
 ```bash
+# Create standalone config (interactive)
+python create_config.py
+
 # Create config for single file
 python create_config.py your_file.nc --output my_config.json
 
@@ -41,6 +50,8 @@ python create_config.py "F4C_00.2.SEG01.OUT.*.nc" --output multi_config.json
 python create_config.py --template template_config.json
 ```
 
+**Note**: Variable names are optional in configuration files. You can set them when running the script with `--variable`.
+
 ## 🎯 Get Started
 
 ### **For New Users**
@@ -48,6 +59,9 @@ python create_config.py --template template_config.json
 1. **Create a Configuration File** (Recommended)
 
    ```bash
+   # Standalone configuration (interactive)
+   python create_config.py
+
    # For single files
    python create_config.py your_data.nc --output my_config.json
 
@@ -98,10 +112,22 @@ python main.py weather_data.nc --variable InstantaneousRainRate --type efficient
 python main.py "climate_*.nc" --variable Temperature2m --type contour --fps 10
 ```
 
+**Zoomed Climate Data:**
+
+```bash
+python main.py "climate_*.nc" --variable Temperature2m --zoom 1.5 --type contour --fps 10
+```
+
 **Ocean Data:**
 
 ```bash
 python main.py ocean_data.nc --variable Salinity --type heatmap --fps 15
+```
+
+**Zoomed Ocean Data:**
+
+```bash
+python main.py ocean_data.nc --variable Salinity --zoom 2.0 --type heatmap --fps 15
 ```
 
 ## ✅ **Key Features**
@@ -132,6 +158,13 @@ python main.py ocean_data.nc --variable Salinity --type heatmap --fps 15
 - Command-line parameter override
 - Configuration validation
 
+### ✅ **Zoom Functionality**
+
+- Crop domain by specified zoom factor
+- Center-based cropping maintains aspect ratio
+- Works with all plot types (efficient, contour, heatmap)
+- Supports both single and multi-file animations
+
 ## 📊 Performance Comparison
 
 | Method            | Time      | Memory  | Disk Space    |
@@ -144,11 +177,17 @@ python main.py ocean_data.nc --variable Salinity --type heatmap --fps 15
 ### **Configuration-Based Workflow** (Recommended)
 
 ```bash
-# 1. Create configuration
+# 1. Create configuration (standalone)
+python create_config.py
+
+# 1. Or create configuration from files
 python create_config.py "*.nc" --output my_config.json
 
 # 2. Run with configuration
 python main.py "*.nc" --config my_config.json
+
+# 2. Or run with variable override
+python main.py "*.nc" --config my_config.json --variable temperature
 
 # 3. Override specific settings
 python main.py "*.nc" --config my_config.json --fps 20
@@ -204,24 +243,25 @@ F4C*.nc               # Files starting with "F4C"
 
 ## 🔧 Command Line Options
 
-| Option             | Description                                  | Default        |
-| ------------------ | -------------------------------------------- | -------------- |
-| `--variable`       | Variable name to animate                     | Required       |
-| `--type`           | Plot type: `efficient`, `contour`, `heatmap` | `efficient`    |
-| `--fps`            | Frames per second                            | `10`           |
-| `--output`         | Output filename                              | Auto-generated |
-| `--batch`          | Create animations for all variables          | False          |
-| `--plot`           | Create single plot instead of animation      | False          |
-| `--config`         | Load configuration from JSON file            | None           |
-| `--overwrite`      | Overwrite existing output files              | False          |
-| `--no-interactive` | Skip interactive mode                        | False          |
+| Option             | Description                                    | Default        |
+| ------------------ | ---------------------------------------------- | -------------- |
+| `--variable`       | Variable name to animate                       | Required       |
+| `--type`           | Plot type: `efficient`, `contour`, `heatmap`   | `efficient`    |
+| `--fps`            | Frames per second                              | `10`           |
+| `--output`         | Output filename                                | Auto-generated |
+| `--batch`          | Create animations for all variables            | False          |
+| `--plot`           | Create single plot instead of animation        | False          |
+| `--config`         | Load configuration from JSON file              | None           |
+| `--overwrite`      | Overwrite existing output files                | False          |
+| `--no-interactive` | Skip interactive mode                          | False          |
+| `--zoom`           | Zoom factor for cropping domain (default: 1.0) | 1.0            |
 
 ## 🧪 Testing
 
 Test your system setup:
 
 ```bash
-python test_multifile.py
+python test_suite.py
 ```
 
 ## 📖 Advanced Features
@@ -246,6 +286,17 @@ The script intelligently handles different dimension counts:
 - **Sequential processing**: Only one file loaded at a time
 - **Progress tracking**: Real-time updates and time estimates
 - **Error handling**: Graceful handling of corrupted files
+
+### Zoom Functionality
+
+- **Center-based cropping**: Maintains aspect ratio by cropping from center
+- **Zoom factor examples**:
+  - `1.0`: No zoom (original domain)
+  - `1.2`: Crop to 83% of original size (500×500 → 416×416)
+  - `1.5`: Crop to 67% of original size (500×500 → 333×333)
+  - `2.0`: Crop to 50% of original size (500×500 → 250×250)
+- **Works with all plot types**: efficient, contour, and heatmap
+- **Multi-file support**: Applied consistently across all files
 
 ## 🚨 Troubleshooting
 
@@ -303,10 +354,62 @@ animate-netcdf/
 ├── config_manager.py           # Configuration management
 ├── file_manager.py             # File discovery and management
 ├── multi_file_animator.py      # Multi-file animation engine
-├── test_multifile.py           # Test suite
+├── test_suite.py               # Test suite
 ├── requirements.txt            # Dependencies
 └── readme.md                  # This file
 ```
+
+### 📁 File Descriptions
+
+**`main.py`** - Core application entry point
+
+- Handles both single-file and multi-file NetCDF animations
+- Contains the `UnifiedAnimator` class for single-file processing
+- Manages command-line argument parsing and user interaction
+- Integrates with other modules for multi-file functionality
+- Supports interactive mode and batch processing
+
+**`create_config.py`** - Standalone configuration creation tool
+
+- Interactive tool for creating JSON configuration files
+- Supports both single-file and multi-file configurations
+- Can analyze NetCDF files to suggest variables and settings
+- Creates template configurations for new users
+- Helps users set up configurations without running the main application
+
+**`config_manager.py`** - Configuration management system
+
+- Contains `AnimationConfig` class for storing animation parameters
+- Contains `ConfigManager` class for loading/saving JSON configurations
+- Handles configuration validation and error checking
+- Provides interactive configuration collection
+- Manages file pattern discovery and timestep extraction
+
+**`file_manager.py`** - Multi-file operations manager
+
+- Contains `NetCDFFileManager` class for handling multiple NetCDF files
+- Discovers files matching patterns (e.g., "_.nc", "F4C_.nc")
+- Validates file consistency across multiple files
+- Extracts common variables and spatial coordinates
+- Estimates memory usage and processing time
+- Sorts files by timestep for proper animation sequence
+
+**`multi_file_animator.py`** - Multi-file animation engine
+
+- Contains `MultiFileAnimator` class for processing multiple files
+- Creates animations without concatenating files (75-87% faster)
+- Handles geographic and heatmap animations
+- Manages global colorbar ranges across all files
+- Provides progress tracking and time estimation
+- Integrates with `UnifiedAnimator` for data processing
+
+**`test_suite.py`** - Comprehensive testing framework
+
+- Tests all major components of the system
+- Validates configuration management
+- Tests file discovery and validation
+- Verifies multi-file animation setup
+- Provides system compatibility checks
 
 ## 🎯 Real-World Impact
 

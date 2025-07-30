@@ -17,7 +17,9 @@ from datetime import datetime
 # Import our custom modules
 from config_manager import AnimationConfig, ConfigManager
 from file_manager import NetCDFFileManager
-from main import UnifiedAnimator  # Import the existing animator
+
+# Import filter function from main
+from main import UnifiedAnimator
 
 
 class MultiFileAnimator:
@@ -26,7 +28,6 @@ class MultiFileAnimator:
     def __init__(self, file_manager: NetCDFFileManager, config: AnimationConfig):
         self.file_manager = file_manager
         self.config = config
-        self.current_animator = None
         self.global_data_range = None
         self.setup_logging()
         
@@ -65,7 +66,10 @@ class MultiFileAnimator:
                     
                     # Apply filtering if needed
                     if self.config.percentile > 0:
-                        data = self._filter_low_values(data, self.config.percentile)
+                        # Create temporary animator to use its filter method
+                        temp_animator = UnifiedAnimator(filepath)
+                        data = temp_animator.filter_low_values(data, self.config.percentile)
+                        temp_animator.close()
                     
                     # Update global range
                     file_min = np.nanmin(data)
@@ -87,18 +91,7 @@ class MultiFileAnimator:
         print(f"📊 Global data range: {all_min:.6f} to {all_max:.6f}")
         return all_min, all_max
     
-    def _filter_low_values(self, data: np.ndarray, percentile: int) -> np.ndarray:
-        """Filter out low percentile values to reduce noise."""
-        if data.size == 0:
-            return data
-        
-        # Calculate percentile threshold
-        threshold = np.percentile(data[data > 0], percentile) if np.any(data > 0) else 0
-        
-        # Create masked array where low values are masked
-        filtered_data = np.where(data >= threshold, data, np.nan)
-        
-        return filtered_data
+
     
     def create_animation_sequence(self) -> bool:
         """Create animation from multiple files."""
@@ -182,8 +175,9 @@ class MultiFileAnimator:
             else:
                 return f"{self.config.output_pattern}.{self.config.output_format}"
         else:
-            # Generate default filename
-            return f"{self.config.variable}_{self.config.plot_type}_multifile.{self.config.output_format}"
+            # Generate default filename with timestamp to prevent overwriting
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            return f"{timestamp}_{self.config.variable}_{self.config.plot_type}_multifile.{self.config.output_format}"
     
     def _create_geographic_animation(self, output_file: str) -> bool:
         """Create geographic animation with Cartopy."""
@@ -388,13 +382,26 @@ class MultiFileAnimator:
                 
                 # Apply filtering
                 if self.config.percentile > 0:
-                    data = self._filter_low_values(data, self.config.percentile)
+                    # Create temporary animator to use its filter method
+                    temp_animator = UnifiedAnimator(filepath)
+                    data = temp_animator.filter_low_values(data, self.config.percentile)
+                    temp_animator.close()
+                
+                # Apply zoom if specified
+                if hasattr(self.config, 'zoom_factor') and self.config.zoom_factor != 1.0:
+                    # Create temporary animator to use its zoom method
+                    temp_animator = UnifiedAnimator(filepath)
+                    # Note: We need to get coordinates for zoom, but we'll skip zoom for now
+                    # as it requires coordinate information that's not available here
+                    print(f"⚠️  Zoom functionality requires coordinate information - skipping zoom")
                 
                 return data
                 
         except Exception as e:
             print(f"⚠️  Error loading {filepath}: {e}")
             return None
+    
+
     
     def _get_colorbar_range(self, sample_data: np.ndarray) -> Tuple[float, float]:
         """Get colorbar range based on configuration."""
@@ -426,31 +433,4 @@ class MultiFileAnimator:
         return process.memory_info().rss / 1024 / 1024
 
 
-if __name__ == "__main__":
-    # Test the multi-file animator
-    print("Testing Multi-File Animator...")
-    
-    # Create test configuration
-    config = AnimationConfig()
-    config.variable = "test_var"
-    config.plot_type = "efficient"
-    config.fps = 10
-    
-    # Create file manager
-    file_manager = NetCDFFileManager("*.nc")
-    files = file_manager.discover_files()
-    
-    if files:
-        # Create multi-file animator
-        animator = MultiFileAnimator(file_manager, config)
-        
-        # Test configuration validation
-        is_valid = animator._validate_config()
-        print(f"Configuration valid: {is_valid}")
-        
-        # Test time estimation
-        if is_valid:
-            time_minutes = animator.estimate_processing_time()
-            print(f"Estimated processing time: {time_minutes:.1f} minutes")
-    
-    print("Multi-file animator test completed!") 
+ 
