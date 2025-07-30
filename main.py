@@ -818,21 +818,27 @@ def main():
         epilog="""
 Examples:
   # Interactive mode
-  python unified_animation.py
+  python main.py
   
-  # Specify NetCDF file
-  python unified_animation.py IDALIA_10km.nc
+  # Single NetCDF file
+  python main.py IDALIA_10km.nc
+  
+  # Multiple NetCDF files (NEW!)
+  python main.py "F4C_00.2.SEG01.OUT.*.nc"
   
   # Quick animation with all arguments
-  python unified_animation.py IDALIA_10km.nc --variable InstantaneousRainRate --type efficient --output my_animation.mp4 --fps 15
+  python main.py IDALIA_10km.nc --variable InstantaneousRainRate --type efficient --output my_animation.mp4 --fps 15
+  
+  # Multi-file animation with configuration
+  python main.py "F4C_00.2.SEG01.OUT.*.nc" --config my_config.json
   
   # Batch animation for all variables
-  python unified_animation.py IDALIA_10km.nc --batch --type contour --fps 10
+  python main.py IDALIA_10km.nc --batch --type contour --fps 10
         """
     )
     
-    parser.add_argument('nc_file', nargs='?', default='IDALIA_10km.nc',
-                       help='Path to NetCDF file (default: IDALIA_10km.nc)')
+    parser.add_argument('input_pattern', nargs='?', default='IDALIA_10km.nc',
+                       help='Path to NetCDF file or pattern for multiple files (e.g., "F4C_00.2.SEG01.OUT.*.nc")')
     
     parser.add_argument('--variable', '-v', 
                        help='Variable name to animate (e.g., InstantaneousRainRate)')
@@ -868,17 +874,142 @@ Examples:
     parser.add_argument('--no-interactive', action='store_true',
                        help='Skip interactive mode and use command line arguments only')
     
+    # Multi-file specific arguments
+    parser.add_argument('--config', '-c',
+                       help='Load configuration from JSON file')
+    
+    parser.add_argument('--save-config',
+                       help='Save current configuration to JSON file')
+    
+    parser.add_argument('--overwrite', action='store_true',
+                       help='Overwrite existing output files')
+    
+    parser.add_argument('--pre-scan', action='store_true', default=True,
+                       help='Pre-scan files for global data range (default: True)')
+    
+    parser.add_argument('--global-colorbar', action='store_true', default=True,
+                       help='Use consistent colorbar across all files (default: True)')
+    
     args = parser.parse_args()
 
-    # Check if file exists
-    if not os.path.exists(args.nc_file):
-        print(f"Error: File '{args.nc_file}' not found!")
+    # Import multi-file components
+    try:
+        from config_manager import ConfigManager, AnimationConfig
+        from file_manager import NetCDFFileManager
+        from multi_file_animator import MultiFileAnimator
+        MULTI_FILE_AVAILABLE = True
+    except ImportError as e:
+        print(f"⚠️  Multi-file components not available: {e}")
+        MULTI_FILE_AVAILABLE = False
+    
+    # Determine if this is a multi-file pattern
+    is_multi_file = ('*' in args.input_pattern or '?' in args.input_pattern or 
+                     args.input_pattern.endswith('.nc') and os.path.isdir(os.path.dirname(args.input_pattern) or '.'))
+    
+    # For multi-file patterns, we need the multi-file components
+    if is_multi_file and not MULTI_FILE_AVAILABLE:
+        print("❌ Multi-file functionality requires additional components")
+        print("Please ensure config_manager.py, file_manager.py, and multi_file_animator.py are available")
+        return
+    
+    # Handle multi-file case
+    if is_multi_file and MULTI_FILE_AVAILABLE:
+        print(f"\n🎬 Multi-file mode detected")
+        print(f"📁 Pattern: {args.input_pattern}")
+        
+        # Initialize file manager
+        file_manager = NetCDFFileManager(args.input_pattern)
+        files = file_manager.discover_files()
+        
+        if not files:
+            print(f"❌ No files found matching pattern: {args.input_pattern}")
+            print(f"💡 Try these patterns:")
+            print(f"   - *.nc (all NetCDF files)")
+            print(f"   - F4C*.nc (files starting with F4C)")
+            print(f"   - test*.nc (files starting with test)")
+            return
+        
+        # Validate file consistency
+        consistency_errors = file_manager.validate_consistency()
+        if consistency_errors:
+            print("❌ File consistency errors:")
+            for error in consistency_errors:
+                print(f"  - {error}")
+            return
+        
+        # Initialize configuration manager
+        config_manager = ConfigManager(args.config if args.config else None)
+        
+        # Load configuration if specified
+        if args.config and config_manager.load_config():
+            config = config_manager.get_config()
+            print(f"📁 Loaded configuration from {args.config}")
+        else:
+            # Get common variables for configuration
+            common_vars = file_manager.get_common_variables()
+            if not common_vars:
+                print("❌ No common variables found across all files")
+                print(f"📊 Available variables by file:")
+                for filepath, info in file_manager.file_info.items():
+                    print(f"  {os.path.basename(filepath)}: {info['variables']}")
+                return
+            
+            # Interactive configuration collection
+            config = config_manager.collect_interactive_config(common_vars, len(files))
+        
+        # Update configuration with command line arguments
+        if args.variable:
+            config.variable = args.variable
+        if args.output:
+            config.output_pattern = args.output
+        if args.fps != 10:
+            config.fps = args.fps
+        if args.percentile != 5:
+            config.percentile = args.percentile
+        if args.type != 'efficient':
+            config.plot_type = args.type
+        if args.overwrite:
+            config.overwrite_existing = True
+        if not args.pre_scan:
+            config.pre_scan_files = False
+        if not args.global_colorbar:
+            config.global_colorbar = False
+        
+        # Save configuration if requested
+        if args.save_config:
+            config_manager.save_config(args.save_config)
+        
+        # Validate configuration
+        if not config_manager.validate_config():
+            print("❌ Configuration validation failed")
+            return
+        
+        # Create multi-file animator
+        multi_animator = MultiFileAnimator(file_manager, config)
+        
+        # Estimate processing time
+        time_minutes = multi_animator.estimate_processing_time()
+        print(f"⏱️  Estimated processing time: {time_minutes:.1f} minutes")
+        
+        # Create animation
+        success = multi_animator.create_animation_sequence()
+        
+        if success:
+            print("✅ Multi-file animation completed successfully!")
+        else:
+            print("❌ Multi-file animation failed")
+        
+        return
+    
+    # Single file case (original logic)
+    if not os.path.exists(args.input_pattern):
+        print(f"Error: File '{args.input_pattern}' not found!")
         return
 
     try:
         # Load the animator
-        print(f"\nLoading NetCDF file: {args.nc_file}")
-        animator = UnifiedAnimator(args.nc_file)
+        print(f"\nLoading NetCDF file: {args.input_pattern}")
+        animator = UnifiedAnimator(args.input_pattern)
 
         # Validate or auto-select animate_dim
         ds_dims = list(animator.ds.dims)
