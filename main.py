@@ -18,6 +18,7 @@ import psutil
 import subprocess
 from datetime import datetime
 import pandas as pd
+import logging
 
 class UnifiedAnimator:
     """Unified animation creator with all plotting methods."""
@@ -26,6 +27,9 @@ class UnifiedAnimator:
         """Initialize with NetCDF file path."""
         if not os.path.exists(nc_file):
             raise FileNotFoundError(f"File not found: {nc_file}")
+        
+        # Set up cartopy logging
+        self._setup_cartopy_logging()
         
         print(f"📁 Loading {nc_file}...")
         self.ds = xr.open_dataset(nc_file)
@@ -46,6 +50,9 @@ class UnifiedAnimator:
         
         # Check for ffmpeg
         self._check_ffmpeg()
+        
+        # Check cartopy map availability
+        self._check_cartopy_maps()
     
     def _check_ffmpeg(self):
         """Check if ffmpeg is available and what codecs are supported."""
@@ -77,6 +84,80 @@ class UnifiedAnimator:
             print("⚠️  ffmpeg not found. Install ffmpeg for video creation.")
             self.ffmpeg_available = False
             self.available_codecs = []
+    
+    def _setup_cartopy_logging(self):
+        """Set up logging for cartopy map downloads."""
+        # Configure logging for cartopy
+        cartopy_logger = logging.getLogger('cartopy')
+        cartopy_logger.setLevel(logging.INFO)
+        
+        # Create console handler if it doesn't exist
+        if not cartopy_logger.handlers:
+            console_handler = logging.StreamHandler()
+            console_handler.setLevel(logging.INFO)
+            formatter = logging.Formatter('🗺️  Cartopy: %(message)s')
+            console_handler.setFormatter(formatter)
+            cartopy_logger.addHandler(console_handler)
+        
+        # Also set up logging for urllib3 (used by cartopy for downloads)
+        urllib3_logger = logging.getLogger('urllib3')
+        urllib3_logger.setLevel(logging.INFO)
+        
+        if not urllib3_logger.handlers:
+            urllib3_handler = logging.StreamHandler()
+            urllib3_handler.setLevel(logging.INFO)
+            urllib3_formatter = logging.Formatter('📥 Download: %(message)s')
+            urllib3_handler.setFormatter(urllib3_formatter)
+            urllib3_logger.addHandler(urllib3_handler)
+    
+    def _check_cartopy_maps(self):
+        """Check if cartopy maps are already downloaded and log status."""
+        try:
+            import cartopy.io.shapereader as shapereader
+            import cartopy.io.img_tiles as img_tiles
+            
+            # Check for Natural Earth data directory
+            ne_data_dir = os.path.expanduser('~/.local/share/cartopy')
+            if os.path.exists(ne_data_dir):
+                print(f"🗺️  Cartopy maps found in: {ne_data_dir}")
+                
+                # Check for common map files
+                map_files = ['natural_earth_physical', 'natural_earth_cultural']
+                for map_type in map_files:
+                    map_path = os.path.join(ne_data_dir, map_type)
+                    if os.path.exists(map_path):
+                        print(f"🗺️  {map_type} maps available")
+                    else:
+                        print(f"🗺️  {map_type} maps will be downloaded when needed")
+            else:
+                print("🗺️  Cartopy maps will be downloaded when needed")
+                
+        except ImportError:
+            print("⚠️  Cartopy not available for map checking")
+    
+    def _add_cartopy_features(self, ax):
+        """Add cartopy features with download checking and logging."""
+        try:
+            # Check if maps are already downloaded
+            ne_data_dir = os.path.expanduser('~/.local/share/cartopy')
+            maps_exist = os.path.exists(ne_data_dir)
+            
+            if not maps_exist:
+                print("🗺️  Downloading cartopy maps...")
+            else:
+                print("🗺️  Using existing cartopy maps")
+            
+            # Add features (cartopy will download if needed)
+            ax.add_feature(cfeature.COASTLINE, linewidth=1.0, edgecolor='black')
+            ax.add_feature(cfeature.BORDERS, linewidth=0.8, edgecolor='gray')
+            ax.add_feature(cfeature.STATES, linewidth=0.5, edgecolor='lightgray')
+            
+            if not maps_exist:
+                print("🗺️  Cartopy maps downloaded successfully")
+                
+        except Exception as e:
+            print(f"⚠️  Warning: Could not add cartopy features: {e}")
+            print("🗺️  Continuing without map features...")
     
     def get_variable_info(self):
         """Get information about available variables."""
@@ -133,29 +214,11 @@ class UnifiedAnimator:
         level_count = len(self.ds.level)
         print(f"\n📊 Variable '{variable}' has {level_count} levels")
         
-        if level_count <= 10:
-            # Show all levels
-            print("Available levels:")
-            for i in range(level_count):
-                level_val = self.ds.level[i].values
-                print(f"  {i}: {level_val}")
-        else:
-            # Show first, middle, and last few levels
-            print("Available levels (showing first, middle, and last few):")
-            for i in range(min(5, level_count)):
-                level_val = self.ds.level[i].values
-                print(f"  {i}: {level_val}")
-            
-            if level_count > 10:
-                mid = level_count // 2
-                print(f"  ... (middle levels) ...")
-                for i in range(max(5, mid-2), min(level_count, mid+3)):
-                    level_val = self.ds.level[i].values
-                    print(f"  {i}: {level_val}")
-            
-            for i in range(max(5, level_count-5), level_count):
-                level_val = self.ds.level[i].values
-                print(f"  {i}: {level_val}")
+        # Always show all levels
+        print("Available levels:")
+        for i in range(level_count):
+            level_val = self.ds.level[i].values
+            print(f"  {i}: {level_val}")
         
         while True:
             choice = input(f"\nSelect level (0-{level_count-1}) or 'avg' for average: ").strip()
@@ -348,10 +411,8 @@ class UnifiedAnimator:
         # Filter low values
         filtered_data = self.filter_low_values(data)
         
-        # Add Cartopy features
-        ax.add_feature(cfeature.COASTLINE, linewidth=1.0, edgecolor='black')
-        ax.add_feature(cfeature.BORDERS, linewidth=0.8, edgecolor='gray')
-        ax.add_feature(cfeature.STATES, linewidth=0.5, edgecolor='lightgray')
+        # Add Cartopy features with download checking
+        self._add_cartopy_features(ax)
         
         # Add gridlines
         gl = ax.gridlines(draw_labels=True, linewidth=0.5, alpha=0.7, linestyle='--', color='gray')
@@ -396,10 +457,8 @@ class UnifiedAnimator:
         # Filter low values
         filtered_data = self.filter_low_values(data)
         
-        # Add Cartopy features
-        ax.add_feature(cfeature.COASTLINE, linewidth=1.0, edgecolor='black')
-        ax.add_feature(cfeature.BORDERS, linewidth=0.8, edgecolor='gray')
-        ax.add_feature(cfeature.STATES, linewidth=0.5, edgecolor='lightgray')
+        # Add Cartopy features with download checking
+        self._add_cartopy_features(ax)
         
         # Add gridlines
         gl = ax.gridlines(draw_labels=True, linewidth=0.5, alpha=0.7, linestyle='--', color='gray')
@@ -510,10 +569,8 @@ class UnifiedAnimator:
             fig, ax = plt.subplots(figsize=(15, 10), 
                                   subplot_kw={'projection': ccrs.PlateCarree()})
             
-            # Add Cartopy features
-            ax.add_feature(cfeature.COASTLINE, linewidth=1.0, edgecolor='black')
-            ax.add_feature(cfeature.BORDERS, linewidth=0.8, edgecolor='gray')
-            ax.add_feature(cfeature.STATES, linewidth=0.5, edgecolor='lightgray')
+            # Add Cartopy features with download checking
+            self._add_cartopy_features(ax)
             
             # Add gridlines
             gl = ax.gridlines(draw_labels=True, linewidth=0.5, alpha=0.7, linestyle='--', color='gray')
