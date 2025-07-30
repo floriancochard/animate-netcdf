@@ -578,7 +578,12 @@ Examples:
         
         # Update percentile filter if specified
         if args.percentile != 5:
-            animator.filter_low_values = lambda data, percentile=args.percentile: animator.filter_low_values(data, percentile)
+            # Store the original method
+            original_filter = animator.filter_low_values
+            # Create a new method with the custom percentile
+            def custom_filter(data, percentile=args.percentile):
+                return original_filter(data, percentile)
+            animator.filter_low_values = custom_filter
         
         # If all required arguments are provided, run in non-interactive mode
         if args.no_interactive or (args.variable and (args.batch or args.plot or not args.no_interactive)):
