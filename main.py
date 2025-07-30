@@ -48,18 +48,35 @@ class UnifiedAnimator:
         self._check_ffmpeg()
     
     def _check_ffmpeg(self):
-        """Check if ffmpeg is available."""
+        """Check if ffmpeg is available and what codecs are supported."""
         try:
             result = subprocess.run(['ffmpeg', '-version'], 
                                   capture_output=True, text=True)
             if result.returncode != 0:
                 print("⚠️  ffmpeg not found. Install ffmpeg for video creation.")
                 self.ffmpeg_available = False
+                self.available_codecs = []
             else:
                 self.ffmpeg_available = True
+                # Check for available codecs
+                codec_result = subprocess.run(['ffmpeg', '-codecs'], 
+                                            capture_output=True, text=True)
+                if codec_result.returncode == 0:
+                    codec_output = codec_result.stdout
+                    self.available_codecs = []
+                    if 'libx264' in codec_output:
+                        self.available_codecs.append('libx264')
+                    if 'libxvid' in codec_output:
+                        self.available_codecs.append('libxvid')
+                    if 'mpeg4' in codec_output:
+                        self.available_codecs.append('mpeg4')
+                    print(f"📹 Available codecs: {self.available_codecs}")
+                else:
+                    self.available_codecs = ['mpeg4']  # Default fallback
         except FileNotFoundError:
             print("⚠️  ffmpeg not found. Install ffmpeg for video creation.")
             self.ffmpeg_available = False
+            self.available_codecs = []
     
     def get_variable_info(self):
         """Get information about available variables."""
@@ -291,6 +308,13 @@ class UnifiedAnimator:
             print(f"\nSpatial Information:")
             print(f"  Latitude range: {lat.min().values:.2f} to {lat.max().values:.2f}")
             print(f"  Longitude range: {lon.min().values:.2f} to {lon.max().values:.2f}")
+        
+        # Show codec information
+        codec_info = self.get_codec_info()
+        print(f"\nVideo Codec Information:")
+        print(f"  ffmpeg available: {codec_info['ffmpeg_available']}")
+        print(f"  Available codecs: {codec_info['available_codecs']}")
+        print(f"  Recommended codec: {codec_info['recommended_codec']}")
     
     def create_single_plot(self, variable, plot_type='efficient', time_step=0, animate_dim='time', level_index=None):
         """Create a single plot for preview."""
@@ -616,13 +640,48 @@ class UnifiedAnimator:
         
         # Save animation
         print(f"💾 Saving animation: {output_file}")
-        anim.save(
-            output_file,
-            writer='ffmpeg',
-            fps=fps,
-            dpi=72,  # Lower DPI for better performance
-            bitrate=1000  # Reasonable bitrate
-        )
+        
+        # Choose the best available codec
+        if hasattr(self, 'available_codecs') and self.available_codecs:
+            if 'libx264' in self.available_codecs:
+                codec = 'libx264'
+            elif 'libxvid' in self.available_codecs:
+                codec = 'libxvid'
+            else:
+                codec = 'mpeg4'
+        else:
+            # Fallback to mpeg4 if no codec detection
+            codec = 'mpeg4'
+        
+        print(f"📹 Using codec: {codec}")
+        
+        # Try to save with the selected codec, fallback to others if it fails
+        codecs_to_try = [codec]
+        if codec != 'mpeg4':
+            codecs_to_try.append('mpeg4')
+        if codec != 'libxvid' and 'libxvid' in getattr(self, 'available_codecs', []):
+            codecs_to_try.append('libxvid')
+        
+        saved_successfully = False
+        for try_codec in codecs_to_try:
+            try:
+                print(f"📹 Trying codec: {try_codec}")
+                anim.save(
+                    output_file,
+                    writer='ffmpeg',
+                    fps=fps,
+                    dpi=72,  # Lower DPI for better performance
+                    bitrate=1000,  # Reasonable bitrate
+                    codec=try_codec
+                )
+                saved_successfully = True
+                print(f"✅ Successfully saved with codec: {try_codec}")
+                break
+            except Exception as e:
+                print(f"❌ Failed with codec {try_codec}: {e}")
+                if try_codec == codecs_to_try[-1]:  # Last codec to try
+                    raise Exception(f"Failed to save animation with any available codec. Last error: {e}")
+                continue
         
         plt.close(fig)
         print(f"✅ Animation saved: {output_file}")
@@ -661,6 +720,26 @@ class UnifiedAnimator:
         print(f"  ✅ Successful: {successful}")
         print(f"  ❌ Failed: {failed}")
         print(f"  📁 Check current directory for output files")
+    
+    def get_codec_info(self):
+        """Get information about available codecs and ffmpeg status."""
+        info = {
+            'ffmpeg_available': self.ffmpeg_available,
+            'available_codecs': getattr(self, 'available_codecs', []),
+            'recommended_codec': None
+        }
+        
+        if hasattr(self, 'available_codecs') and self.available_codecs:
+            if 'libx264' in self.available_codecs:
+                info['recommended_codec'] = 'libx264'
+            elif 'libxvid' in self.available_codecs:
+                info['recommended_codec'] = 'libxvid'
+            else:
+                info['recommended_codec'] = 'mpeg4'
+        else:
+            info['recommended_codec'] = 'mpeg4'
+        
+        return info
     
     def close(self):
         """Close the dataset."""
@@ -999,6 +1078,10 @@ Examples:
         print("2. Check that the variable has time and spatial dimensions")
         print("3. Ensure you have ffmpeg installed for video creation")
         print("4. For geographic animations, make sure you have latitude/longitude coordinates")
+        print("5. If you get 'unknown encoder h264' error:")
+        print("   - Install ffmpeg with h264 support: brew install ffmpeg (macOS) or apt-get install ffmpeg (Ubuntu)")
+        print("   - The script will automatically try alternative codecs (mpeg4, libxvid)")
+        print("   - Check available codecs with: ffmpeg -codecs | grep -E '(libx264|libxvid|mpeg4)'")
 
 if __name__ == "__main__":
     main() 

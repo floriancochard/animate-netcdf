@@ -212,6 +212,13 @@ python main.py data.nc --variable temperature --type contour --fps 20 --output h
 
 - Install ffmpeg: `brew install ffmpeg` (macOS) or `sudo apt install ffmpeg` (Ubuntu)
 
+**"unknown encoder h264" or codec errors**
+
+- The script automatically detects available codecs and tries alternatives
+- If you get codec errors, the script will try: `libx264` → `libxvid` → `mpeg4`
+- Install ffmpeg with full codec support: `brew install ffmpeg --with-fdk-aac` (macOS)
+- Test your system: `python test_codecs.py`
+
 **Memory issues with large files**
 
 - Use `--type efficient` for better performance
@@ -295,14 +302,31 @@ python main.py data.nc \
 5. **Use efficient type**: For large files or when speed matters
 6. **Adjust FPS**: Lower FPS for large files, higher for smooth playback
 
+## 🧪 Testing Your System
+
+Before creating animations, test your system setup:
+
+```bash
+# Test ffmpeg and codec availability
+python test_codecs.py
+```
+
+This will check:
+
+- ffmpeg installation
+- Available video codecs
+- Matplotlib animation capabilities
+- Recommended codec for your system
+
 ## 📞 Getting Help
 
 If you encounter issues:
 
-1. Check the file structure: `python main.py your_file.nc`
-2. Try different plot types: `efficient`, `contour`, `heatmap`
-3. Adjust FPS and filtering settings
-4. Monitor memory usage in the output
-5. Use `--plot` to preview data before animating
+1. **Test your system**: `python test_codecs.py`
+2. Check the file structure: `python main.py your_file.nc`
+3. Try different plot types: `efficient`, `contour`, `heatmap`
+4. Adjust FPS and filtering settings
+5. Monitor memory usage in the output
+6. Use `--plot` to preview data before animating
 
 The script is designed to work with virtually any NetCDF file structure and will provide clear error messages if something goes wrong.
