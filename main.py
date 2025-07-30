@@ -5,6 +5,8 @@ Animation Creator for NetCDF Data
 
 import xarray as xr
 import numpy as np
+import matplotlib as mpl
+mpl.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 import cartopy.crs as ccrs
