@@ -109,6 +109,34 @@ class UnifiedAnimator:
         
         return filtered_data
     
+    def prepare_data_for_plotting(self, variable, time_step=0):
+        """Prepare data for plotting by handling extra dimensions."""
+        # Get the data array
+        data_array = self.ds[variable].isel(time=time_step)
+        
+        # Squeeze out any singleton dimensions (like level=1)
+        data_array = data_array.squeeze()
+        
+        # Convert to numpy array
+        data = data_array.values
+        
+        # Get coordinates (handle both 2D and 1D coordinate cases)
+        if hasattr(self.ds, 'latitude') and hasattr(self.ds, 'longitude'):
+            lats = self.ds.latitude.values
+            lons = self.ds.longitude.values
+        else:
+            # Try to get coordinates from the data array itself
+            coords = data_array.coords
+            if 'latitude' in coords and 'longitude' in coords:
+                lats = coords['latitude'].values
+                lons = coords['longitude'].values
+            else:
+                # Fallback: create coordinate arrays based on data shape
+                lats = np.arange(data.shape[0])
+                lons = np.arange(data.shape[1])
+        
+        return data, lats, lons
+    
     def explore_dataset(self):
         """Explore and display dataset information."""
         print("\n" + "=" * 60)
@@ -167,10 +195,8 @@ class UnifiedAnimator:
         fig, ax = plt.subplots(figsize=(15, 10), 
                               subplot_kw={'projection': ccrs.PlateCarree()})
         
-        # Get data and coordinates
-        data = self.ds[variable].isel(time=time_step).values
-        lats = self.ds.latitude.values
-        lons = self.ds.longitude.values
+        # Get data and coordinates using the helper method
+        data, lats, lons = self.prepare_data_for_plotting(variable, time_step)
         
         # Filter low values
         filtered_data = self.filter_low_values(data)
@@ -217,10 +243,8 @@ class UnifiedAnimator:
         fig, ax = plt.subplots(figsize=(15, 10), 
                               subplot_kw={'projection': ccrs.PlateCarree()})
         
-        # Get data and coordinates
-        data = self.ds[variable].isel(time=time_step).values
-        lats = self.ds.latitude.values
-        lons = self.ds.longitude.values
+        # Get data and coordinates using the helper method
+        data, lats, lons = self.prepare_data_for_plotting(variable, time_step)
         
         # Filter low values
         filtered_data = self.filter_low_values(data)
@@ -266,8 +290,8 @@ class UnifiedAnimator:
         """Create a simple heatmap plot."""
         fig, ax = plt.subplots(figsize=(12, 8))
         
-        # Get data
-        data = self.ds[variable].isel(time=time_step).values
+        # Get data using the helper method
+        data, _, _ = self.prepare_data_for_plotting(variable, time_step)
         
         # Filter low values
         filtered_data = self.filter_low_values(data)
@@ -314,9 +338,8 @@ class UnifiedAnimator:
         data_min = np.nanmin(filtered_all_data)
         data_max = np.nanmax(filtered_all_data)
         
-        # Get coordinates
-        lats = self.ds.latitude.values
-        lons = self.ds.longitude.values
+        # Get coordinates using helper method
+        _, lats, lons = self.prepare_data_for_plotting(variable, 0)
         
         # Create figure and axis based on plot type
         if plot_type in ['efficient', 'contour']:
@@ -340,7 +363,7 @@ class UnifiedAnimator:
             
             if plot_type == 'efficient':
                 # Initialize efficient plot
-                initial_data = self.ds[variable].isel(time=0).values
+                initial_data, _, _ = self.prepare_data_for_plotting(variable, 0)
                 filtered_initial_data = self.filter_low_values(initial_data)
                 im = ax.imshow(filtered_initial_data, cmap='Blues', alpha=0.8,
                               extent=[lons.min(), lons.max(), lats.min(), lats.max()],
@@ -353,7 +376,7 @@ class UnifiedAnimator:
                 
             else:  # contour
                 # Initialize contour plot
-                initial_data = self.ds[variable].isel(time=0).values
+                initial_data, _, _ = self.prepare_data_for_plotting(variable, 0)
                 filtered_initial_data = self.filter_low_values(initial_data)
                 levels = np.linspace(data_min, data_max, 20)
                 contour = ax.contourf(lons, lats, filtered_initial_data, levels=levels, cmap='Blues',
@@ -370,7 +393,7 @@ class UnifiedAnimator:
             fig, ax = plt.subplots(figsize=(12, 8))
             
             # Initialize heatmap plot
-            initial_data = self.ds[variable].isel(time=0).values
+            initial_data, _, _ = self.prepare_data_for_plotting(variable, 0)
             filtered_initial_data = self.filter_low_values(initial_data)
             im = ax.imshow(filtered_initial_data, cmap='Blues', aspect='auto',
                           vmin=data_min, vmax=data_max)
@@ -405,8 +428,8 @@ class UnifiedAnimator:
                     current_memory = process.memory_info().rss / 1024 / 1024
                     print(f"📊 Frame {frame_count}/{max_frames}, Memory: {current_memory:.1f} MB")
                 
-                # Get data for current frame
-                data = self.ds[variable].isel(time=frame).values
+                # Get data for current frame using helper method
+                data, _, _ = self.prepare_data_for_plotting(variable, frame)
                 filtered_data = self.filter_low_values(data)
                 
                 # Update title and subtitle
