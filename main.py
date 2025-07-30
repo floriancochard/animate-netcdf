@@ -1,9 +1,6 @@
 #!/usr/bin/env python3
 """
-Unified Animation Creator for NetCDF Data
-
-This script provides a comprehensive interface for creating animations from NetCDF files.
-It combines the best features of all previous scripts into one streamlined solution.
+Animation Creator for NetCDF Data
 """
 
 import xarray as xr
