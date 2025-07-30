@@ -61,8 +61,43 @@ class MultiFileAnimator:
                     if self.config.variable not in ds.data_vars:
                         continue
                     
-                    # Get data for the variable
-                    data = ds[self.config.variable].values
+                    # Get the data array and reduce to 2D
+                    data_array = ds[self.config.variable]
+                    
+                    # Define spatial dimensions
+                    spatial_dims = ['lat', 'lon', 'latitude', 'longitude', 'y', 'x', 'nj', 'ni', 'nj_u', 'ni_u', 'nj_v', 'ni_v', 
+                                   'latitude_u', 'longitude_u', 'latitude_v', 'longitude_v']
+                    
+                    # If we have more than 2 dimensions, we need to reduce to 2D
+                    if len(data_array.dims) > 2:
+                        # Keep only the spatial dimensions, handle others
+                        non_spatial_dims = [dim for dim in data_array.dims if dim not in spatial_dims]
+                        
+                        if non_spatial_dims:
+                            # If level_index is specified, select that level
+                            if self.config.level_index is not None and ('level' in non_spatial_dims or 'level_w' in non_spatial_dims):
+                                level_dim = 'level' if 'level' in non_spatial_dims else 'level_w'
+                                try:
+                                    data_array = data_array.isel({level_dim: self.config.level_index})
+                                    non_spatial_dims.remove(level_dim)
+                                except Exception as e:
+                                    print(f"❌ Error selecting level {self.config.level_index} from {level_dim}: {e}")
+                                    continue
+                            
+                            # Average over remaining non-spatial dimensions
+                            for dim in non_spatial_dims:
+                                data_array = data_array.mean(dim=dim)
+                    
+                    # Squeeze out any remaining singleton dimensions
+                    data_array = data_array.squeeze()
+                    
+                    # Convert to numpy array
+                    data = data_array.values
+                    
+                    # Verify we have 2D data
+                    if len(data.shape) != 2:
+                        print(f"⚠️  Skipping file {filepath}: data shape {data.shape} is not 2D")
+                        continue
                     
                     # Apply filtering if needed
                     if self.config.percentile > 0:
@@ -276,7 +311,12 @@ class MultiFileAnimator:
                 vmin, vmax = self._get_colorbar_range(initial_data)
                 levels = np.linspace(vmin, vmax, 20)
                 
-                contour = ax.contourf(lon_min, lat_min, initial_data, levels=levels, 
+                # Create coordinate arrays for contour plot
+                lons = np.linspace(lon_min, lon_max, initial_data.shape[1])
+                lats = np.linspace(lat_min, lat_max, initial_data.shape[0])
+                lon_grid, lat_grid = np.meshgrid(lons, lats)
+                
+                contour = ax.contourf(lon_grid, lat_grid, initial_data, levels=levels, 
                                      cmap='Blues', transform=ccrs.PlateCarree())
                 
                 # Add colorbar
@@ -293,7 +333,7 @@ class MultiFileAnimator:
                             collection.remove()
                         
                         # Create new contour
-                        new_contour = ax.contourf(lon_min, lat_min, data, levels=levels,
+                        new_contour = ax.contourf(lon_grid, lat_grid, data, levels=levels,
                                                  cmap='Blues', transform=ccrs.PlateCarree())
                     
                     # Update title
@@ -371,14 +411,55 @@ class MultiFileAnimator:
             return False
     
     def _load_file_data(self, filepath: str) -> Optional[np.ndarray]:
-        """Load data from a single file."""
+        """Load data from a single file and reduce to 2D for plotting."""
         try:
             with xr.open_dataset(filepath) as ds:
                 if self.config.variable not in ds.data_vars:
                     return None
                 
-                # Get data
-                data = ds[self.config.variable].values
+                # Get the data array
+                data_array = ds[self.config.variable]
+                
+                # Handle multiple non-spatial dimensions
+                # Define spatial dimensions
+                spatial_dims = ['lat', 'lon', 'latitude', 'longitude', 'y', 'x', 'nj', 'ni', 'nj_u', 'ni_u', 'nj_v', 'ni_v', 
+                               'latitude_u', 'longitude_u', 'latitude_v', 'longitude_v']
+                
+                # Find which dimensions are spatial
+                spatial_dims_in_data = [dim for dim in data_array.dims if dim in spatial_dims]
+                
+                # If we have more than 2 dimensions, we need to reduce to 2D
+                if len(data_array.dims) > 2:
+                    # Keep only the spatial dimensions, handle others
+                    non_spatial_dims = [dim for dim in data_array.dims if dim not in spatial_dims]
+                    
+                    if non_spatial_dims:
+                        # If level_index is specified, select that level
+                        if self.config.level_index is not None and ('level' in non_spatial_dims or 'level_w' in non_spatial_dims):
+                            level_dim = 'level' if 'level' in non_spatial_dims else 'level_w'
+                            try:
+                                data_array = data_array.isel({level_dim: self.config.level_index})
+                                non_spatial_dims.remove(level_dim)
+                            except Exception as e:
+                                print(f"❌ Error selecting level {self.config.level_index} from {level_dim}: {e}")
+                                if level_dim in ds.dims:
+                                    print(f"Available level indices: 0 to {len(ds[level_dim])-1}")
+                                raise
+                        
+                        # Average over remaining non-spatial dimensions
+                        for dim in non_spatial_dims:
+                            data_array = data_array.mean(dim=dim)
+                
+                # Squeeze out any remaining singleton dimensions
+                data_array = data_array.squeeze()
+                
+                # Convert to numpy array
+                data = data_array.values
+                
+                # Verify we have 2D data
+                if len(data.shape) != 2:
+                    raise ValueError(f"Data must be 2D for plotting, got shape {data.shape}. "
+                                   f"Available dimensions: {list(ds[self.config.variable].dims)}")
                 
                 # Apply filtering
                 if self.config.percentile > 0:
@@ -386,14 +467,6 @@ class MultiFileAnimator:
                     temp_animator = UnifiedAnimator(filepath)
                     data = temp_animator.filter_low_values(data, self.config.percentile)
                     temp_animator.close()
-                
-                # Apply zoom if specified
-                if hasattr(self.config, 'zoom_factor') and self.config.zoom_factor != 1.0:
-                    # Create temporary animator to use its zoom method
-                    temp_animator = UnifiedAnimator(filepath)
-                    # Note: We need to get coordinates for zoom, but we'll skip zoom for now
-                    # as it requires coordinate information that's not available here
-                    print(f"⚠️  Zoom functionality requires coordinate information - skipping zoom")
                 
                 return data
                 
