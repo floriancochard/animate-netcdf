@@ -84,12 +84,16 @@ def main():
     update_version_in_file("pyproject.toml", current_version, new_version)
     print(f"Updated version in pyproject.toml to {new_version}")
     
-    # Check if there are uncommitted changes
+    # Check if there are other uncommitted changes (excluding the version change we just made)
     result = run_command("git status --porcelain", check=False)
     if result.stdout.strip():
-        print("Warning: You have uncommitted changes. Please commit them first.")
-        print(result.stdout)
-        sys.exit(1)
+        # Filter out the pyproject.toml change we just made
+        lines = result.stdout.strip().split('\n')
+        other_changes = [line for line in lines if not line.endswith('pyproject.toml')]
+        if other_changes:
+            print("Warning: You have uncommitted changes. Please commit them first.")
+            print('\n'.join(other_changes))
+            sys.exit(1)
     
     # Commit the version change
     run_command(f'git add pyproject.toml')
