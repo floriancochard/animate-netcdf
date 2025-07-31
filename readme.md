@@ -2,8 +2,6 @@
 
 Create beautiful animations from NetCDF files with support for both single files and multiple files without concatenation. **75-87% faster** than traditional concatenation methods.
 
-> **🚀 New Commands**: Install the package with `pip install -e .` and use the short command `anc` instead of `python scripts/main.py`!
-
 ## 🚀 Quick Start
 
 ### Installation
@@ -18,6 +16,12 @@ pip install -r requirements.txt
 
 ### Basic Usage
 
+**Interactive Mode (Recommended):**
+
+```bash
+anc
+```
+
 **Single File:**
 
 ```bash
@@ -27,7 +31,7 @@ anc your_file.nc
 **Multiple Files:**
 
 ```bash
-anc F4C_00.2.SEG01.OUT.*.nc
+anc *.nc
 ```
 
 **Quick Animation:**
@@ -35,6 +39,17 @@ anc F4C_00.2.SEG01.OUT.*.nc
 ```bash
 anc your_file.nc --variable temperature --type efficient --output animation.mp4
 ```
+
+### Interactive File Selection
+
+When you run `anc` without any arguments, you'll get an interactive menu:
+
+1. **Enter a single NetCDF file path** - Manually specify a file
+2. **Enter a file pattern** - Use patterns like `*.nc` or `F4C_*.nc`
+3. **Browse current directory** - See all NetCDF files in the current directory
+4. **Exit** - Quit the application
+
+This makes it easy to get started without remembering file names or patterns!
 
 **Zoomed Animation:**
 
@@ -120,8 +135,11 @@ anc "*.nc" --config my_config.json --fps 20
 ### **Direct Command Line**
 
 ```bash
+# Interactive mode (file selection)
+anc
+
 # Single file
-anc IDALIA_10km.nc --variable InstantaneousRainRate --type efficient --fps 15
+anc your_file.nc --variable InstantaneousRainRate --type efficient --fps 15
 
 # Multiple files
 anc F4C_00.2.SEG01.OUT.*.nc --variable InstantaneousRainRate --type efficient --fps 15
@@ -130,10 +148,11 @@ anc F4C_00.2.SEG01.OUT.*.nc --variable InstantaneousRainRate --type efficient --
 ### **Interactive Mode**
 
 ```bash
-# Single file
+# Launch interactive file selection
 anc
 
-# Multiple files
+# Interactive mode with file specified
+anc your_file.nc
 anc F4C_00.2.SEG01.OUT.*.nc
 ```
 
@@ -296,6 +315,9 @@ anc your_file.nc --no-interactive
 
 # Use configuration tool to see variables
 anc config your_file.nc
+
+# Or use interactive mode to explore files
+anc
 ```
 
 ## 🎯 Real-World Impact

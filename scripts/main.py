@@ -109,7 +109,7 @@ COMMANDS:
     help             Show this help message
 
 EXAMPLES:
-    anc                                    # Interactive mode
+    anc                                    # Interactive mode (file selection)
     anc your_file.nc                       # Single file animation
     anc *.nc --variable temperature        # Multi-file animation
     anc config                             # Create configuration

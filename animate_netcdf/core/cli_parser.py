@@ -25,28 +25,28 @@ class CLIParser:
             formatter_class=argparse.RawDescriptionHelpFormatter,
             epilog="""
 Examples:
-  # Interactive mode
+  # Interactive mode (file selection)
   python main.py
   
   # Single NetCDF file
-  python main.py IDALIA_10km.nc
+  python main.py your_file.nc
   
   # Multiple NetCDF files (NEW!)
   python main.py "F4C_00.2.SEG01.OUT.*.nc"
   
   # Quick animation with all arguments
-  python main.py IDALIA_10km.nc --variable InstantaneousRainRate --type efficient --output my_animation.mp4 --fps 15
+  python main.py your_file.nc --variable InstantaneousRainRate --type efficient --output my_animation.mp4 --fps 15
   
   # Multi-file animation with configuration
   python main.py "F4C_00.2.SEG01.OUT.*.nc" --config my_config.json
   
   # Batch animation for all variables
-  python main.py IDALIA_10km.nc --batch --type contour --fps 10
+  python main.py your_file.nc --batch --type contour --fps 10
             """
         )
         
         # Main input argument
-        parser.add_argument('input_pattern', nargs='*', default=['IDALIA_10km.nc'],
+        parser.add_argument('input_pattern', nargs='*', default=[],
                            help='Path to NetCDF file or pattern for multiple files (e.g., "F4C_00.2.SEG01.OUT.*.nc")')
         
         # Core animation parameters
@@ -119,17 +119,17 @@ Examples:
         args = parser.parse_args()
         
         # Handle shell-expanded glob patterns
-        if hasattr(args, 'input_pattern') and args.input_pattern:
-            # Convert list to single pattern if multiple files were passed
-            if isinstance(args.input_pattern, list) and len(args.input_pattern) > 1:
-                # Multiple files were passed, reconstruct pattern
-                args.input_pattern = CLIParser._reconstruct_pattern(args.input_pattern)
-            elif isinstance(args.input_pattern, list) and len(args.input_pattern) == 1:
-                # Single file, extract from list
-                args.input_pattern = args.input_pattern[0]
-            elif isinstance(args.input_pattern, list) and len(args.input_pattern) == 0:
-                # No files specified, use default
-                args.input_pattern = 'IDALIA_10km.nc'
+        if hasattr(args, 'input_pattern'):
+            if isinstance(args.input_pattern, list):
+                if len(args.input_pattern) > 1:
+                    # Multiple files were passed, reconstruct pattern
+                    args.input_pattern = CLIParser._reconstruct_pattern(args.input_pattern)
+                elif len(args.input_pattern) == 1:
+                    # Single file, extract from list
+                    args.input_pattern = args.input_pattern[0]
+                elif len(args.input_pattern) == 0:
+                    # No files specified, set to None to indicate interactive mode
+                    args.input_pattern = None
         
         return args
     
@@ -226,6 +226,9 @@ Examples:
         print("""
 📖 Usage Examples:
 
+🔹 Interactive Mode:
+  python main.py                            # Launch interactive file selection
+
 🔹 Single File Animations:
   python main.py your_file.nc
   python main.py data.nc --variable temperature --type efficient --fps 15
@@ -284,4 +287,6 @@ Examples:
         Returns:
             bool: True if pattern contains wildcards for multiple files
         """
+        if input_pattern is None:
+            return False
         return '*' in input_pattern or '?' in input_pattern 

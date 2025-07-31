@@ -105,6 +105,10 @@ class AppController:
         print("Unified Animation Creator for NetCDF Data")
         print("=" * 60)
         
+        # If no input pattern is provided, start interactive file selection
+        if self.args.input_pattern is None:
+            return self._handle_file_selection_interactive()
+        
         # Check if this is a multi-file pattern
         is_multi_file = CLIParser.is_multi_file_pattern(self.args.input_pattern)
         
@@ -119,6 +123,11 @@ class AppController:
         Returns:
             bool: True if single file interactive mode completed successfully
         """
+        # Check if input pattern is None (should not happen in this method)
+        if self.args.input_pattern is None:
+            print("❌ No file specified")
+            return False
+            
         # Check if file exists
         if not os.path.exists(self.args.input_pattern):
             print(f"❌ File not found: {self.args.input_pattern}")
@@ -136,6 +145,72 @@ class AppController:
             
         except Exception as e:
             print(f"❌ Error loading file: {e}")
+            return False
+    
+    def _handle_file_selection_interactive(self) -> bool:
+        """Handle interactive file selection when no file is specified.
+        
+        Returns:
+            bool: True if file selection completed successfully
+        """
+        print("\n📁 No file specified. Please select a file or pattern:")
+        print("1. Enter a single NetCDF file path")
+        print("2. Enter a file pattern (e.g., *.nc, F4C_*.nc)")
+        print("3. Browse current directory for NetCDF files")
+        print("4. Exit")
+        
+        choice = input("\nEnter your choice (1-4): ").strip()
+        
+        if choice == "1":
+            file_path = input("Enter the path to your NetCDF file: ").strip()
+            if not file_path:
+                print("❌ No file path provided")
+                return False
+            
+            # Update the args object with the selected file
+            self.args.input_pattern = file_path
+            return self._handle_single_file_interactive()
+            
+        elif choice == "2":
+            pattern = input("Enter the file pattern (e.g., *.nc, F4C_*.nc): ").strip()
+            if not pattern:
+                print("❌ No pattern provided")
+                return False
+            
+            # Update the args object with the selected pattern
+            self.args.input_pattern = pattern
+            return self._handle_multi_file_interactive()
+            
+        elif choice == "3":
+            # Browse current directory for NetCDF files
+            nc_files = []
+            for file in os.listdir('.'):
+                if file.endswith('.nc') or file.endswith('.NC'):
+                    nc_files.append(file)
+            
+            if not nc_files:
+                print("❌ No NetCDF files found in current directory")
+                return False
+            
+            print("\n📁 NetCDF files found in current directory:")
+            for i, file in enumerate(nc_files, 1):
+                print(f"{i}. {file}")
+            
+            file_choice = input(f"\nSelect file number (1-{len(nc_files)}): ").strip()
+            try:
+                file_idx = int(file_choice) - 1
+                selected_file = nc_files[file_idx]
+                self.args.input_pattern = selected_file
+                return self._handle_single_file_interactive()
+            except (ValueError, IndexError):
+                print("❌ Invalid choice")
+                return False
+                
+        elif choice == "4":
+            print("Goodbye!")
+            return True
+        else:
+            print("❌ Invalid choice")
             return False
     
     def _handle_multi_file_interactive(self) -> bool:
@@ -199,6 +274,11 @@ class AppController:
         Returns:
             bool: True if non-interactive mode completed successfully
         """
+        # If no input pattern is provided, fall back to interactive mode
+        if self.args.input_pattern is None:
+            print("⚠️  No file specified, falling back to interactive mode")
+            return self._handle_interactive_mode()
+        
         # Check if this is a multi-file pattern
         is_multi_file = CLIParser.is_multi_file_pattern(self.args.input_pattern)
         
@@ -255,13 +335,31 @@ class AppController:
             
             # Check if variable is required but not provided
             if not self.args.variable:
-                print("❌ No variable specified. Please set --variable or use interactive mode.")
                 print("💡 Available variables:")
                 var_info = animator.get_variable_info()
                 for i, (var_name, info) in enumerate(var_info.items(), 1):
                     units = info['attrs'].get('units', 'N/A')
                     print(f"  {i}. {var_name} (units: {units})")
-                return False
+                print("\n❌ No variable specified.")
+                print("Options:")
+                print("1. Use --variable to specify a variable")
+                print("2. Switch to interactive mode")
+                print("3. Exit")
+                
+                choice = input("\nEnter your choice (1-3): ").strip()
+                
+                if choice == "1":
+                    print("Please run the command again with --variable <variable_name>")
+                    return False
+                elif choice == "2":
+                    print("\nSwitching to interactive mode...")
+                    return self._show_interactive_menu(animator)
+                elif choice == "3":
+                    print("Goodbye!")
+                    return True
+                else:
+                    print("Invalid choice!")
+                    return False
             
             # Create animation
             if self.args.output:

@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "animate-netcdf"
-version = "1.0.0"
+version = "1.0.2"
 description = "A comprehensive tool for creating animations from NetCDF data files"
 readme = "readme.md"
-license = { text = "MIT" }
+license = "MIT"
 authors = [{ name = "Florian Cochard", email = "florian@ponoto.studio" }]
 maintainers = [{ name = "Florian Cochard", email = "florian@ponoto.studio" }]
 keywords = [
@@ -21,7 +21,7 @@ keywords = [
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
+
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.7",
