@@ -244,6 +244,12 @@ class NetCDFFileManager:
             preview.append(info)
         
         return preview
+    
+    def get_sample_file(self) -> Optional[str]:
+        """Get the first file as a sample for configuration."""
+        if self.sorted_files:
+            return self.sorted_files[0]
+        return None
 
 
 class FilePatternMatcher:

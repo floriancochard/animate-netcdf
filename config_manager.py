@@ -105,7 +105,7 @@ class ConfigManager:
         self.loaded = False
     
     def collect_interactive_config(self, available_variables: List[str], 
-                                 file_count: int) -> AnimationConfig:
+                                 file_count: int, sample_file: Optional[str] = None) -> AnimationConfig:
         """Collect configuration interactively from user."""
         print("\n" + "=" * 60)
         print("Configuration Setup")
@@ -128,6 +128,12 @@ class ConfigManager:
                     print(f"❌ Please enter a number between 1 and {len(available_variables)}")
             except ValueError:
                 print("❌ Please enter a valid number")
+        
+        # Check for level dimensions if we have a sample file
+        if sample_file:
+            level_index = self._check_level_dimension(sample_file, self.config.variable)
+            if level_index is not None:
+                self.config.level_index = level_index
         
         # Plot type selection
         print(f"\n🎨 Plot types:")
@@ -164,7 +170,10 @@ class ConfigManager:
                 print("❌ Please enter a valid number")
         
         # Output settings
-        default_output = f"{self.config.variable}_{self.config.plot_type}_animation.{self.config.output_format}"
+        # Generate default output with timestamp for multi-file mode
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        default_output = f"{timestamp}_{self.config.variable}_{self.config.plot_type}_multifile.{self.config.output_format}"
         output_file = input(f"\nOutput filename (default: {default_output}): ").strip()
         if output_file:
             self.config.output_pattern = output_file
@@ -205,6 +214,53 @@ class ConfigManager:
             self.save_config()
         
         return self.config
+    
+    def _check_level_dimension(self, sample_file: str, variable: str) -> Optional[int]:
+        """Check if variable has level dimension and prompt user for selection."""
+        try:
+            import xarray as xr
+            with xr.open_dataset(sample_file) as ds:
+                if variable not in ds.data_vars:
+                    return None
+                
+                data_array = ds[variable]
+                
+                # Check for level dimensions
+                level_dim = None
+                if 'level' in data_array.dims:
+                    level_dim = 'level'
+                elif 'level_w' in data_array.dims:
+                    level_dim = 'level_w'
+                
+                if level_dim is None:
+                    return None
+                
+                level_count = len(ds[level_dim])
+                print(f"\n📊 Variable '{variable}' has {level_count} levels (dimension: {level_dim})")
+                
+                # Show all levels
+                print("Available levels:")
+                for i in range(level_count):
+                    level_val = ds[level_dim][i].values
+                    print(f"  {i}: {level_val}")
+                
+                while True:
+                    choice = input(f"\nSelect level (0-{level_count-1}) or 'avg' for average: ").strip()
+                    
+                    if choice.lower() == 'avg':
+                        return None  # Will average over levels
+                    try:
+                        level_idx = int(choice)
+                        if 0 <= level_idx < level_count:
+                            return level_idx
+                        else:
+                            print(f"❌ Level index must be between 0 and {level_count-1}")
+                    except ValueError:
+                        print("❌ Please enter a valid number or 'avg'")
+                        
+        except Exception as e:
+            print(f"⚠️  Error checking level dimension: {e}")
+            return None
     
     def load_config(self) -> bool:
         """Load configuration from file."""

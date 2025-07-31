@@ -1090,17 +1090,38 @@ Examples:
             config = config_manager.get_config()
             print(f"📁 Loaded configuration from {args.config}")
         else:
-            # Get common variables for configuration
-            common_vars = file_manager.get_common_variables()
-            if not common_vars:
-                print("❌ No common variables found across all files")
-                print(f"📊 Available variables by file:")
-                for filepath, info in file_manager.file_info.items():
-                    print(f"  {os.path.basename(filepath)}: {info['variables']}")
+            # EFFICIENT MULTI-FILE PROCESSING: Only read first file for configuration
+            print(f"📁 Efficient multi-file processing: Reading first file for configuration...")
+            first_file = file_manager.get_sample_file()
+            if not first_file:
+                print("❌ No sample file available")
                 return
             
-            # Interactive configuration collection
-            config = config_manager.collect_interactive_config(common_vars, len(files))
+            # Read first file to get variable information
+            try:
+                with xr.open_dataset(first_file) as ds:
+                    # Get variables from first file (assuming all files have same structure)
+                    first_file_vars = list(ds.data_vars.keys())
+                    print(f"📊 Variables found in first file: {first_file_vars}")
+                    
+                    # Get common variables (should be same as first file for consistent datasets)
+                    common_vars = file_manager.get_common_variables()
+                    if not common_vars:
+                        print("❌ No common variables found across all files")
+                        print(f"📊 Available variables by file:")
+                        for filepath, info in file_manager.file_info.items():
+                            print(f"  {os.path.basename(filepath)}: {info['variables']}")
+                        return
+                    
+                    print(f"✅ All files have consistent structure")
+                    print(f"📊 Common variables: {common_vars}")
+                    
+                    # Interactive configuration collection with sample file for level detection
+                    config = config_manager.collect_interactive_config(common_vars, len(files), first_file)
+                    
+            except Exception as e:
+                print(f"❌ Error reading first file {first_file}: {e}")
+                return
         
         # Update configuration with command line arguments
         if args.variable:
@@ -1453,7 +1474,10 @@ Examples:
                 return
             
             # Get output filename and FPS
-            default_output = f"{variable}_{anim_type}_animation.mp4"
+            # Generate default output with timestamp
+            from datetime import datetime
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            default_output = f"{timestamp}_{variable}_{anim_type}_animation.mp4"
             output_file = input(f"\nOutput filename (default: {default_output}): ").strip()
             if not output_file:
                 output_file = default_output

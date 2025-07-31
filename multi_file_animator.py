@@ -37,6 +37,11 @@ class MultiFileAnimator:
         self.setup_logging()
         self._check_ffmpeg()
         
+        # Add caching for efficient processing
+        self.data_cache = {}  # Cache for pre-loaded data
+        self.spatial_coords_cache = None  # Cache for spatial coordinates
+        self.pre_loaded = False  # Flag to track if data is pre-loaded
+        
     def setup_logging(self):
         """Set up logging for the multi-file animator."""
         self.logger = logging.getLogger('MultiFileAnimator')
@@ -122,6 +127,67 @@ class MultiFileAnimator:
         
         return saved_successfully
     
+    def _filter_low_values(self, data: np.ndarray, percentile: int) -> np.ndarray:
+        """Filter out low percentile values to reduce noise."""
+        if data.size == 0:
+            return data
+        
+        # Calculate percentile threshold
+        threshold = np.percentile(data[data > 0], percentile) if np.any(data > 0) else 0
+        
+        # Create masked array where low values are masked
+        filtered_data = np.where(data >= threshold, data, np.nan)
+        
+        return filtered_data
+    
+    def pre_load_all_data(self) -> bool:
+        """Pre-load all file data into memory for efficient processing."""
+        print("📦 Pre-loading all file data into memory...")
+        
+        total_files = len(self.file_manager.sorted_files)
+        all_min = float('inf')
+        all_max = float('-inf')
+        
+        for i, filepath in enumerate(self.file_manager.sorted_files):
+            try:
+                print(f"📦 Loading file {i+1}/{total_files}: {os.path.basename(filepath)}")
+                
+                # Load and process data
+                data = self._load_file_data(filepath)
+                if data is not None:
+                    # Cache the processed data
+                    self.data_cache[filepath] = data
+                    
+                    # Update global range
+                    file_min = np.nanmin(data)
+                    file_max = np.nanmax(data)
+                    
+                    if not np.isnan(file_min):
+                        all_min = min(all_min, file_min)
+                    if not np.isnan(file_max):
+                        all_max = max(all_max, file_max)
+                else:
+                    print(f"⚠️  Failed to load data from {filepath}")
+                    
+            except Exception as e:
+                print(f"⚠️  Error loading {filepath}: {e}")
+                continue
+        
+        if all_min == float('inf') or all_max == float('-inf'):
+            print("⚠️  Could not determine global data range")
+            return False
+        
+        # Set global data range
+        self.global_data_range = (all_min, all_max)
+        print(f"📊 Global data range: {all_min:.6f} to {all_max:.6f}")
+        
+        # Cache spatial coordinates from first file
+        self.spatial_coords_cache = self.file_manager.get_spatial_coordinates()
+        
+        self.pre_loaded = True
+        print(f"✅ Pre-loaded {len(self.data_cache)} files into memory")
+        return True
+    
     def pre_scan_files(self) -> Tuple[float, float]:
         """Pre-scan all files to determine global data range."""
         if not self.config.pre_scan_files:
@@ -181,10 +247,8 @@ class MultiFileAnimator:
                     
                     # Apply filtering if needed
                     if self.config.percentile > 0:
-                        # Create temporary animator to use its filter method
-                        temp_animator = UnifiedAnimator(filepath)
-                        data = temp_animator.filter_low_values(data, self.config.percentile)
-                        temp_animator.close()
+                        # Apply filtering directly without creating temporary animator
+                        data = self._filter_low_values(data, self.config.percentile)
                     
                     # Update global range
                     file_min = np.nanmin(data)
@@ -244,9 +308,17 @@ class MultiFileAnimator:
         if not self._validate_config():
             return False
         
-        # Pre-scan for global data range if enabled
+        # EFFICIENT PROCESSING: Pre-load all data into memory
         if self.config.global_colorbar and self.config.pre_scan_files:
-            self.global_data_range = self.pre_scan_files()
+            # Use the new pre-loading method instead of pre-scanning
+            if not self.pre_load_all_data():
+                print("❌ Failed to pre-load data")
+                return False
+        else:
+            # If not using global colorbar, still pre-load for efficiency
+            if not self.pre_load_all_data():
+                print("❌ Failed to pre-load data")
+                return False
         
         # Create output filename
         output_file = self._generate_output_filename()
@@ -256,7 +328,7 @@ class MultiFileAnimator:
             print(f"⚠️  Output file {output_file} already exists. Use --overwrite to overwrite.")
             return False
         
-        # Create animation
+        # Create animation using cached data
         try:
             if self.config.plot_type in ['efficient', 'contour']:
                 success = self._create_geographic_animation(output_file)
@@ -321,8 +393,12 @@ class MultiFileAnimator:
             import cartopy.feature as cfeature
             from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
             
-            # Get spatial coordinates from first file
-            spatial_coords = self.file_manager.get_spatial_coordinates()
+            # Get spatial coordinates (use cached if available)
+            if self.spatial_coords_cache:
+                spatial_coords = self.spatial_coords_cache
+            else:
+                spatial_coords = self.file_manager.get_spatial_coordinates()
+            
             if not spatial_coords:
                 print("❌ No spatial coordinates found")
                 return False
@@ -386,10 +462,15 @@ class MultiFileAnimator:
                 cbar = plt.colorbar(im, ax=ax, shrink=0.8)
                 cbar.set_label(f'{self.config.variable} (units)')
                 
-                # Animation function
+                # Animation function (uses cached data for efficiency)
                 def animate(frame):
                     filepath = self.file_manager.sorted_files[frame]
-                    data = self._load_file_data(filepath)
+                    # Use cached data if available, otherwise load from file
+                    if self.pre_loaded and filepath in self.data_cache:
+                        data = self.data_cache[filepath]
+                    else:
+                        data = self._load_file_data(filepath)
+                    
                     if data is not None:
                         im.set_array(data)
                     
@@ -422,10 +503,15 @@ class MultiFileAnimator:
                 cbar = plt.colorbar(contour, ax=ax, shrink=0.8)
                 cbar.set_label(f'{self.config.variable} (units)')
                 
-                # Animation function
+                # Animation function (uses cached data for efficiency)
                 def animate(frame):
                     filepath = self.file_manager.sorted_files[frame]
-                    data = self._load_file_data(filepath)
+                    # Use cached data if available, otherwise load from file
+                    if self.pre_loaded and filepath in self.data_cache:
+                        data = self.data_cache[filepath]
+                    else:
+                        data = self._load_file_data(filepath)
+                    
                     if data is not None:
                         # Remove previous contour
                         for collection in ax.collections:
@@ -479,10 +565,15 @@ class MultiFileAnimator:
             cbar = plt.colorbar(im, ax=ax)
             cbar.set_label(f'{self.config.variable} (units)')
             
-            # Animation function
+            # Animation function (uses cached data for efficiency)
             def animate(frame):
                 filepath = self.file_manager.sorted_files[frame]
-                data = self._load_file_data(filepath)
+                # Use cached data if available, otherwise load from file
+                if self.pre_loaded and filepath in self.data_cache:
+                    data = self.data_cache[filepath]
+                else:
+                    data = self._load_file_data(filepath)
+                
                 if data is not None:
                     im.set_array(data)
                 
@@ -511,6 +602,10 @@ class MultiFileAnimator:
     
     def _load_file_data(self, filepath: str) -> Optional[np.ndarray]:
         """Load data from a single file and reduce to 2D for plotting."""
+        # Check if data is already cached
+        if self.pre_loaded and filepath in self.data_cache:
+            return self.data_cache[filepath]
+        
         try:
             with xr.open_dataset(filepath) as ds:
                 if self.config.variable not in ds.data_vars:
@@ -562,10 +657,8 @@ class MultiFileAnimator:
                 
                 # Apply filtering
                 if self.config.percentile > 0:
-                    # Create temporary animator to use its filter method
-                    temp_animator = UnifiedAnimator(filepath)
-                    data = temp_animator.filter_low_values(data, self.config.percentile)
-                    temp_animator.close()
+                    # Apply filtering directly without creating temporary animator
+                    data = self._filter_low_values(data, self.config.percentile)
                 
                 return data
                 

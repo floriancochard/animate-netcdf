@@ -119,7 +119,10 @@ def create_single_file_config(file_path: str, output_file: str = None) -> bool:
             print("❌ Please enter a valid number")
     
     # Output settings
-    default_output = f"{config.variable}_{config.plot_type}_animation.{config.output_format}"
+    # Generate default output with timestamp
+    from datetime import datetime
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    default_output = f"{timestamp}_{config.variable}_{config.plot_type}_animation.{config.output_format}"
     output_file = input(f"\nOutput filename (default: {default_output}): ").strip()
     if output_file:
         config.output_pattern = output_file
@@ -206,7 +209,12 @@ def create_multi_file_config(file_pattern: str, output_file: str = None) -> bool
     
     # Create configuration using the existing interactive collection
     config_manager = ConfigManager()
-    config = config_manager.collect_interactive_config(common_vars, len(files))
+    # Use first file as sample for level detection
+    first_file = file_manager.get_sample_file()
+    if not first_file:
+        print("❌ No sample file available")
+        return False
+    config = config_manager.collect_interactive_config(common_vars, len(files), first_file)
     
     # Set file pattern
     config.file_pattern = file_pattern
@@ -326,10 +334,13 @@ def create_standalone_config(output_file: str = None) -> bool:
             print("❌ Please enter a valid number")
     
     # Output settings
+    # Generate default output with timestamp
+    from datetime import datetime
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     if config.variable:
-        default_output = f"{config.variable}_{config.plot_type}_animation.{config.output_format}"
+        default_output = f"{timestamp}_{config.variable}_{config.plot_type}_animation.{config.output_format}"
     else:
-        default_output = f"animation_{config.plot_type}.{config.output_format}"
+        default_output = f"{timestamp}_animation_{config.plot_type}.{config.output_format}"
     
     output_filename = input(f"\nOutput filename (default: {default_output}): ").strip()
     if output_filename:
