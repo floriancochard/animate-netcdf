@@ -27,11 +27,11 @@ anc *.nc
 # or
 anc F4C_00.2.SEG01.OUT.*.nc --variable InstantaneousRainRate --type efficient --fps 15
 
-# Quick animation
-anc your_file.nc --variable temperature --type efficient --output animation.mp4
-
-# Configuration-based workflow
+# Configuration (optional)
+anc config
+# or
 anc config *.nc --output my_config.json
+# or
 anc "*.nc" --config my_config.json
 
 ```
