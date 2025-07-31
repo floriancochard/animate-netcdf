@@ -10,10 +10,16 @@ import json
 import argparse
 from typing import List, Dict, Any, Optional
 
+import sys
+import os
+
+# Add the parent directory to the path so we can import from animate_netcdf
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
 # Import our modules
 try:
-    from config_manager import AnimationConfig, ConfigManager
-    from file_manager import NetCDFFileManager
+    from animate_netcdf.core.config_manager import AnimationConfig, ConfigManager
+    from animate_netcdf.core.file_manager import NetCDFFileManager
     MULTI_FILE_AVAILABLE = True
 except ImportError as e:
     print(f"⚠️  Multi-file components not available: {e}")

@@ -8,7 +8,7 @@ import glob
 import re
 from typing import List, Optional, Dict, Any, Tuple
 import xarray as xr
-from config_manager import extract_timestep_from_filename, discover_netcdf_files, sort_files_by_timestep
+from animate_netcdf.core.config_manager import extract_timestep_from_filename, discover_netcdf_files, sort_files_by_timestep
 
 
 class NetCDFFileManager:

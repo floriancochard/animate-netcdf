@@ -10,6 +10,9 @@
 # Configuration files (may contain sensitive paths)
 *.json
 
+# Data directory (contains large files)
+data/
+
 # Python cache files
 __pycache__/
 *.py[cod]

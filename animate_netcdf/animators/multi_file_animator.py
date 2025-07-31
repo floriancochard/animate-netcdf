@@ -18,11 +18,13 @@ import subprocess
 import os
 
 # Import our custom modules
-from config_manager import AnimationConfig, ConfigManager
-from file_manager import NetCDFFileManager
+from animate_netcdf.core.config_manager import AnimationConfig, ConfigManager
+from animate_netcdf.core.file_manager import NetCDFFileManager
 
-# Import filter function from main
-from main import UnifiedAnimator
+# Import utilities from the new modular structure
+from animate_netcdf.utils.ffmpeg_utils import ffmpeg_manager
+from animate_netcdf.utils.data_processing import DataProcessor
+from animate_netcdf.utils.plot_utils import PlotUtils
 
 
 class MultiFileAnimator:
@@ -32,114 +34,17 @@ class MultiFileAnimator:
         self.file_manager = file_manager
         self.config = config
         self.global_data_range = None
-        self.ffmpeg_available = False
-        self.available_codecs = []
-        self.setup_logging()
-        self._check_ffmpeg()
+        
+        # Use the new utility classes
+        self.ffmpeg_manager = ffmpeg_manager
+        self.data_processor = DataProcessor()
+        self.plot_utils = PlotUtils()
         
         # Add caching for efficient processing
         self.data_cache = {}  # Cache for pre-loaded data
         self.spatial_coords_cache = None  # Cache for spatial coordinates
         self.pre_loaded = False  # Flag to track if data is pre-loaded
         
-    def setup_logging(self):
-        """Set up logging for the multi-file animator."""
-        self.logger = logging.getLogger('MultiFileAnimator')
-        self.logger.setLevel(logging.INFO)
-        
-        if not self.logger.handlers:
-            handler = logging.StreamHandler()
-            formatter = logging.Formatter('🎬 MultiFile: %(message)s')
-            handler.setFormatter(formatter)
-            self.logger.addHandler(handler)
-    
-    def _check_ffmpeg(self):
-        """Check if ffmpeg is available and what codecs are supported."""
-        try:
-            result = subprocess.run(['ffmpeg', '-version'], 
-                                  capture_output=True, text=True)
-            if result.returncode != 0:
-                print("⚠️  ffmpeg not found. Install ffmpeg for video creation.")
-                self.ffmpeg_available = False
-                self.available_codecs = []
-            else:
-                self.ffmpeg_available = True
-                # Check for available codecs
-                codec_result = subprocess.run(['ffmpeg', '-codecs'], 
-                                            capture_output=True, text=True)
-                if codec_result.returncode == 0:
-                    codec_output = codec_result.stdout
-                    self.available_codecs = []
-                    if 'libx264' in codec_output:
-                        self.available_codecs.append('libx264')
-                    if 'libxvid' in codec_output:
-                        self.available_codecs.append('libxvid')
-                    if 'mpeg4' in codec_output:
-                        self.available_codecs.append('mpeg4')
-                    print(f"📹 Available codecs: {self.available_codecs}")
-                else:
-                    self.available_codecs = ['mpeg4']  # Default fallback
-        except FileNotFoundError:
-            print("⚠️  ffmpeg not found. Install ffmpeg for video creation.")
-            self.ffmpeg_available = False
-            self.available_codecs = []
-    
-    def _save_animation_with_fallback(self, anim, output_file: str, fps: int) -> bool:
-        """Save animation with codec fallback logic."""
-        if not self.ffmpeg_available:
-            print("❌ ffmpeg not available for video creation")
-            return False
-        
-        # Determine codecs to try
-        codecs_to_try = []
-        if 'libx264' in self.available_codecs:
-            codecs_to_try.append('libx264')
-        if 'libxvid' in self.available_codecs:
-            codecs_to_try.append('libxvid')
-        if 'mpeg4' in self.available_codecs:
-            codecs_to_try.append('mpeg4')
-        
-        # If no specific codecs found, try default
-        if not codecs_to_try:
-            codecs_to_try = ['mpeg4']
-        
-        saved_successfully = False
-        for try_codec in codecs_to_try:
-            try:
-                print(f"📹 Trying codec: {try_codec}")
-                anim.save(
-                    output_file,
-                    writer='ffmpeg',
-                    fps=fps,
-                    dpi=72,  # Lower DPI for better performance
-                    bitrate=1000,  # Reasonable bitrate
-                    codec=try_codec
-                )
-                saved_successfully = True
-                print(f"✅ Successfully saved with codec: {try_codec}")
-                break
-            except Exception as e:
-                print(f"❌ Failed with codec {try_codec}: {e}")
-                if try_codec == codecs_to_try[-1]:  # Last codec to try
-                    print(f"❌ Failed to save animation with any available codec. Last error: {e}")
-                    return False
-                continue
-        
-        return saved_successfully
-    
-    def _filter_low_values(self, data: np.ndarray, percentile: int) -> np.ndarray:
-        """Filter out low percentile values to reduce noise."""
-        if data.size == 0:
-            return data
-        
-        # Calculate percentile threshold
-        threshold = np.percentile(data[data > 0], percentile) if np.any(data > 0) else 0
-        
-        # Create masked array where low values are masked
-        filtered_data = np.where(data >= threshold, data, np.nan)
-        
-        return filtered_data
-    
     def pre_load_all_data(self) -> bool:
         """Pre-load all file data into memory for efficient processing."""
         print("📦 Pre-loading all file data into memory...")
@@ -248,7 +153,7 @@ class MultiFileAnimator:
                     # Apply filtering if needed
                     if self.config.percentile > 0:
                         # Apply filtering directly without creating temporary animator
-                        data = self._filter_low_values(data, self.config.percentile)
+                        data = self.data_processor.filter_low_values(data, self.config.percentile)
                     
                     # Update global range
                     file_min = np.nanmin(data)
@@ -545,7 +450,7 @@ class MultiFileAnimator:
             )
             
             # Save animation
-            success = self._save_animation_with_fallback(anim, output_file, self.config.fps)
+            success = self.plot_utils.save_animation_with_fallback(anim, output_file, self.config.fps, self.ffmpeg_manager)
             plt.close(fig)
             
             return success
@@ -601,7 +506,7 @@ class MultiFileAnimator:
             )
             
             # Save animation
-            success = self._save_animation_with_fallback(anim, output_file, self.config.fps)
+            success = self.plot_utils.save_animation_with_fallback(anim, output_file, self.config.fps, self.ffmpeg_manager)
             plt.close(fig)
             
             return success
@@ -668,7 +573,7 @@ class MultiFileAnimator:
                 # Apply filtering
                 if self.config.percentile > 0:
                     # Apply filtering directly without creating temporary animator
-                    data = self._filter_low_values(data, self.config.percentile)
+                    data = self.data_processor.filter_low_values(data, self.config.percentile)
                 
                 return data
                 
