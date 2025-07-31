@@ -374,15 +374,25 @@ class MultiFileAnimator:
     
     def _generate_output_filename(self) -> str:
         """Generate output filename based on configuration."""
+        # Always generate a fresh timestamp to prevent overwriting
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        
         if self.config.output_pattern:
-            # Use the configured pattern
+            # Check if the output pattern already contains a timestamp pattern (YYYYMMDD_HHMMSS)
+            import re
+            timestamp_pattern = r'^\d{8}_\d{6}_'
+            if re.match(timestamp_pattern, self.config.output_pattern):
+                # Remove the old timestamp and add new one
+                base_pattern = re.sub(timestamp_pattern, '', self.config.output_pattern)
+                return f"{timestamp}_{base_pattern}"
+            
+            # Use the configured pattern as is
             if self.config.output_pattern.endswith(f'.{self.config.output_format}'):
                 return self.config.output_pattern
             else:
                 return f"{self.config.output_pattern}.{self.config.output_format}"
         else:
             # Generate default filename with timestamp to prevent overwriting
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             return f"{timestamp}_{self.config.variable}_{self.config.plot_type}_multifile.{self.config.output_format}"
     
     def _create_geographic_animation(self, output_file: str) -> bool:

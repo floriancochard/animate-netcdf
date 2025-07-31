@@ -1085,43 +1085,50 @@ Examples:
         # Initialize configuration manager
         config_manager = ConfigManager(args.config if args.config else None)
         
-        # Load configuration if specified
-        if args.config and config_manager.load_config():
-            config = config_manager.get_config()
-            print(f"📁 Loaded configuration from {args.config}")
+        # Check if we already have a loaded configuration
+        if config is not None:
+            print(f"📁 Using loaded configuration")
+            print(f"   Variable: {config.variable}")
+            print(f"   Plot type: {config.plot_type}")
+            print(f"   FPS: {config.fps}")
         else:
-            # EFFICIENT MULTI-FILE PROCESSING: Only read first file for configuration
-            print(f"📁 Efficient multi-file processing: Reading first file for configuration...")
-            first_file = file_manager.get_sample_file()
-            if not first_file:
-                print("❌ No sample file available")
-                return
-            
-            # Read first file to get variable information
-            try:
-                with xr.open_dataset(first_file) as ds:
-                    # Get variables from first file (assuming all files have same structure)
-                    first_file_vars = list(ds.data_vars.keys())
-                    print(f"📊 Variables found in first file: {first_file_vars}")
-                    
-                    # Get common variables (should be same as first file for consistent datasets)
-                    common_vars = file_manager.get_common_variables()
-                    if not common_vars:
-                        print("❌ No common variables found across all files")
-                        print(f"📊 Available variables by file:")
-                        for filepath, info in file_manager.file_info.items():
-                            print(f"  {os.path.basename(filepath)}: {info['variables']}")
-                        return
-                    
-                    print(f"✅ All files have consistent structure")
-                    print(f"📊 Common variables: {common_vars}")
-                    
-                    # Interactive configuration collection with sample file for level detection
-                    config = config_manager.collect_interactive_config(common_vars, len(files), first_file)
-                    
-            except Exception as e:
-                print(f"❌ Error reading first file {first_file}: {e}")
-                return
+            # Load configuration if specified via command line
+            if args.config and config_manager.load_config():
+                config = config_manager.get_config()
+                print(f"📁 Loaded configuration from {args.config}")
+            else:
+                # EFFICIENT MULTI-FILE PROCESSING: Only read first file for configuration
+                print(f"📁 Efficient multi-file processing: Reading first file for configuration...")
+                first_file = file_manager.get_sample_file()
+                if not first_file:
+                    print("❌ No sample file available")
+                    return
+                
+                # Read first file to get variable information
+                try:
+                    with xr.open_dataset(first_file) as ds:
+                        # Get variables from first file (assuming all files have same structure)
+                        first_file_vars = list(ds.data_vars.keys())
+                        print(f"📊 Variables found in first file: {first_file_vars}")
+                        
+                        # Get common variables (should be same as first file for consistent datasets)
+                        common_vars = file_manager.get_common_variables()
+                        if not common_vars:
+                            print("❌ No common variables found across all files")
+                            print(f"📊 Available variables by file:")
+                            for filepath, info in file_manager.file_info.items():
+                                print(f"  {os.path.basename(filepath)}: {info['variables']}")
+                            return
+                        
+                        print(f"✅ All files have consistent structure")
+                        print(f"📊 Common variables: {common_vars}")
+                        
+                        # Interactive configuration collection with sample file for level detection
+                        config = config_manager.collect_interactive_config(common_vars, len(files), first_file)
+                        
+                except Exception as e:
+                    print(f"❌ Error reading first file {first_file}: {e}")
+                    return
         
         # Update configuration with command line arguments
         if args.variable:
