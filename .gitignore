@@ -13,6 +13,9 @@
 # Data directory (contains large files)
 data/
 
+# Documentation directory
+docs/
+
 # Python cache files
 __pycache__/
 *.py[cod]

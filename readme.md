@@ -64,3 +64,40 @@ anc validate
 # Run tests
 anc test --full
 ```
+
+## 🚀 Deployment
+
+This project uses automated deployment to PyPI via GitHub Actions. To release a new version:
+
+### Automatic Deployment
+
+1. **Create a new version tag:**
+
+   ```bash
+   python scripts/release.py patch    # for bug fixes
+   python scripts/release.py minor    # for new features
+   python scripts/release.py major    # for breaking changes
+   ```
+
+2. **Manual tag creation (alternative):**
+   ```bash
+   # Update version in pyproject.toml
+   git add pyproject.toml
+   git commit -m "Bump version to X.Y.Z"
+   git tag vX.Y.Z
+   git push origin main
+   git push origin vX.Y.Z
+   ```
+
+### Setup Requirements
+
+1. **PyPI API Token:** Create a PyPI API token at https://pypi.org/manage/account/token/
+2. **GitHub Secrets:** Add your PyPI token as a GitHub secret named `PYPI_API_TOKEN`
+   - Go to your GitHub repository → Settings → Secrets and variables → Actions
+   - Add new repository secret with name `PYPI_API_TOKEN` and your token as the value
+
+The GitHub Actions workflow will automatically:
+
+- Build the package when you push a version tag (e.g., `v1.0.3`)
+- Run tests on every push to main/develop branches
+- Publish to PyPI when tests pass
