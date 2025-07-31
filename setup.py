@@ -26,12 +26,12 @@ setup(
     name="animate-netcdf",
     version="1.0.0",
     author="Florian Cochard",
-    author_email="florian.cochard@example.com",  # Update with your actual email
+    author_email="florian@ponoto.studio",  # Update with your actual email
     description="A comprehensive tool for creating animations from NetCDF data files",
     long_description=read_readme(),
     long_description_content_type="text/markdown",
     url="https://github.com/floriancochard/animate-netcdf",  # Update with your actual repo
-    license="MIT",
+
     packages=find_packages(),
     classifiers=[
         "Development Status :: 4 - Beta",
@@ -59,8 +59,8 @@ setup(
     },
     entry_points={
         "console_scripts": [
-            "animate-netcdf=scripts.main:main",
-            "anc=scripts.main:main",
+            "animate-netcdf=animate_netcdf.__main__:main",
+            "anc=animate_netcdf.__main__:main",
         ],
     },
     include_package_data=True,

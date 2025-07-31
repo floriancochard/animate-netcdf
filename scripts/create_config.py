@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 # Import our modules
 try:
-    from animate_netcdf.core.config_manager import AnimationConfig, ConfigManager
+    from animate_netcdf.core.config_manager import AnimationConfig, ConfigManager, PlotType
     from animate_netcdf.core.file_manager import NetCDFFileManager
     MULTI_FILE_AVAILABLE = True
 except ImportError as e:
@@ -99,7 +99,7 @@ def create_single_file_config(file_path: str, output_file: str = None) -> bool:
     while True:
         try:
             choice = input("Select plot type (1-3): ").strip()
-            plot_types = ['efficient', 'contour', 'heatmap']
+            plot_types = [PlotType.EFFICIENT, PlotType.CONTOUR, PlotType.HEATMAP]
             plot_idx = int(choice) - 1
             if 0 <= plot_idx < 3:
                 config.plot_type = plot_types[plot_idx]
@@ -128,7 +128,7 @@ def create_single_file_config(file_path: str, output_file: str = None) -> bool:
     # Generate default output with timestamp
     from datetime import datetime
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    default_output = f"{timestamp}_{config.variable}_{config.plot_type}_animation.{config.output_format}"
+    default_output = f"{timestamp}_{config.variable}_{config.plot_type.value}_animation.{config.output_format.value}"
     output_file = input(f"\nOutput filename (default: {default_output}): ").strip()
     if output_file:
         config.output_pattern = output_file
@@ -243,7 +243,7 @@ def create_template_config(output_file: str = "template_config.json"):
     
     # Set template values
     config.variable = "your_variable_name"
-    config.plot_type = "efficient"
+    config.plot_type = PlotType.EFFICIENT
     config.fps = 10
     config.output_pattern = "animation.mp4"
     config.file_pattern = "*.nc"
@@ -314,7 +314,7 @@ def create_standalone_config(output_file: str = None) -> bool:
     while True:
         try:
             choice = input("Select plot type (1-3): ").strip()
-            plot_types = ['efficient', 'contour', 'heatmap']
+            plot_types = [PlotType.EFFICIENT, PlotType.CONTOUR, PlotType.HEATMAP]
             plot_idx = int(choice) - 1
             if 0 <= plot_idx < 3:
                 config.plot_type = plot_types[plot_idx]
@@ -344,9 +344,9 @@ def create_standalone_config(output_file: str = None) -> bool:
     from datetime import datetime
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     if config.variable:
-        default_output = f"{timestamp}_{config.variable}_{config.plot_type}_animation.{config.output_format}"
+        default_output = f"{timestamp}_{config.variable}_{config.plot_type.value}_animation.{config.output_format.value}"
     else:
-        default_output = f"{timestamp}_animation_{config.plot_type}.{config.output_format}"
+        default_output = f"{timestamp}_animation_{config.plot_type.value}.{config.output_format.value}"
     
     output_filename = input(f"\nOutput filename (default: {default_output}): ").strip()
     if output_filename:
@@ -457,7 +457,7 @@ Examples:
         success = create_standalone_config(args.output)
         if success:
             print(f"\n🎉 Configuration created successfully!")
-            print(f"💡 Use it with: python main.py --config {args.output or 'animation_config.json'}")
+            print(f"💡 It is loaded by default but you can load it with: anc --config {args.output or 'animation_config.json'}")
         else:
             print(f"\n❌ Failed to create configuration")
         return
@@ -472,7 +472,7 @@ Examples:
     
     if success:
         print(f"\n🎉 Configuration created successfully!")
-        print(f"💡 Use it with: python main.py --config {args.output or 'animation_config.json'}")
+        print(f"💡 It is loaded by default but you can load it with: anc --config {args.output or 'animation_config.json'}")
     else:
         print(f"\n❌ Failed to create configuration")
 

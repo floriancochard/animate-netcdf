@@ -5,6 +5,8 @@ Extracted from main.py for better organization
 """
 
 import argparse
+import os
+import sys
 from typing import Dict, Any, Optional, Tuple, List
 
 
@@ -44,7 +46,7 @@ Examples:
         )
         
         # Main input argument
-        parser.add_argument('input_pattern', nargs='?', default='IDALIA_10km.nc',
+        parser.add_argument('input_pattern', nargs='*', default=['IDALIA_10km.nc'],
                            help='Path to NetCDF file or pattern for multiple files (e.g., "F4C_00.2.SEG01.OUT.*.nc")')
         
         # Core animation parameters
@@ -114,7 +116,75 @@ Examples:
             argparse.Namespace: Parsed command line arguments
         """
         parser = CLIParser.create_parser()
-        return parser.parse_args()
+        args = parser.parse_args()
+        
+        # Handle shell-expanded glob patterns
+        if hasattr(args, 'input_pattern') and args.input_pattern:
+            # Convert list to single pattern if multiple files were passed
+            if isinstance(args.input_pattern, list) and len(args.input_pattern) > 1:
+                # Multiple files were passed, reconstruct pattern
+                args.input_pattern = CLIParser._reconstruct_pattern(args.input_pattern)
+            elif isinstance(args.input_pattern, list) and len(args.input_pattern) == 1:
+                # Single file, extract from list
+                args.input_pattern = args.input_pattern[0]
+            elif isinstance(args.input_pattern, list) and len(args.input_pattern) == 0:
+                # No files specified, use default
+                args.input_pattern = 'IDALIA_10km.nc'
+        
+        return args
+    
+    @staticmethod
+    def _reconstruct_pattern(file_paths: List[str]) -> str:
+        """Reconstruct a glob pattern from a list of file paths.
+        
+        Args:
+            file_paths: List of file paths that were shell-expanded
+            
+        Returns:
+            str: Reconstructed glob pattern
+        """
+        if not file_paths:
+            return ""
+        
+        # If all files have the same extension, create a pattern
+        extensions = set()
+        basenames = []
+        
+        for path in file_paths:
+            if os.path.isfile(path):
+                basename, ext = os.path.splitext(path)
+                extensions.add(ext)
+                basenames.append(basename)
+        
+        # If all files have the same extension and similar naming pattern
+        if len(extensions) == 1:
+            ext = list(extensions)[0]
+            
+            # Check if basenames follow a pattern (e.g., F4C_00.2.SEG01.OUT.001, F4C_00.2.SEG01.OUT.002)
+            if len(basenames) > 1:
+                # Try to find common prefix and suffix
+                common_prefix = os.path.commonprefix(basenames)
+                common_suffix = ""
+                
+                # Find common suffix by reversing and finding common prefix
+                reversed_basenames = [name[::-1] for name in basenames]
+                common_reversed_prefix = os.path.commonprefix(reversed_basenames)
+                if common_reversed_prefix:
+                    common_suffix = common_reversed_prefix[::-1]
+                
+                # Create pattern
+                if common_prefix and common_suffix:
+                    pattern = f"{common_prefix}*{common_suffix}{ext}"
+                    return pattern
+                elif common_prefix:
+                    pattern = f"{common_prefix}*{ext}"
+                    return pattern
+                else:
+                    # Fallback to simple wildcard
+                    return f"*{ext}"
+        
+        # Fallback: join all files with space (not ideal but functional)
+        return " ".join(file_paths)
     
     @staticmethod
     def validate_args(args: argparse.Namespace) -> Tuple[bool, List[str]]:

@@ -63,6 +63,18 @@ class AppController:
             # Initialize configuration manager
             self.config_manager = ConfigManager(args.config if args.config else None)
             
+            # Adjust mode based on loaded configuration
+            if self.mode == "interactive" and not args.variable:
+                # Check if we have a loaded configuration with a variable
+                # Try to load the configuration if not already loaded
+                if not self.config_manager.loaded:
+                    self.config_manager.load_config()
+                
+                if self.config_manager.loaded:
+                    config = self.config_manager.get_config()
+                    if config.variable:
+                        self.mode = "non_interactive"
+            
             # Handle different modes
             if self.mode == "interactive":
                 return self._handle_interactive_mode()
@@ -151,12 +163,24 @@ class AppController:
                 print(f"  - {error}")
             return False
         
-        # Get or create configuration
-        config = self._get_or_create_config(file_manager, files)
-        if not config:
+        # Get common variables
+        common_vars = file_manager.get_common_variables()
+        if not common_vars:
+            print("❌ No common variables found across all files")
             return False
         
-        # Create multi-file animator
+        print(f"📊 Common variables: {common_vars}")
+        
+        # Get sample file for level detection
+        sample_file = file_manager.get_sample_file()
+        
+        # Collect interactive configuration
+        config = self.config_manager.collect_interactive_config(common_vars, len(files), sample_file)
+        
+        # Set file pattern
+        config.file_pattern = self.args.input_pattern
+        
+        # Create multi-file animator with the interactive configuration
         multi_animator = MultiFileAnimator(file_manager, config)
         
         # Create animation
@@ -297,8 +321,16 @@ class AppController:
         if not config:
             return False
         
+        # Set the file pattern for the current operation
+        config.file_pattern = self.args.input_pattern
+        
         # Update configuration with command line arguments
         self._update_config_from_args(config)
+        
+        # Check if variable is required but not provided
+        if not config.variable and not self.args.variable:
+            print("❌ No variable specified. Falling back to interactive mode for variable selection.")
+            return self._handle_multi_file_interactive()
         
         # Validate configuration
         if not self.config_manager.validate_config():
@@ -521,6 +553,7 @@ class AppController:
         """
         if self.args.variable:
             config.variable = self.args.variable
+        
         if self.args.output:
             config.output_pattern = self.args.output
         if self.args.fps != 10:

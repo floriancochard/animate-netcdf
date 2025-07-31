@@ -1,0 +1,67 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "animate-netcdf"
+version = "1.0.0"
+description = "A comprehensive tool for creating animations from NetCDF data files"
+readme = "readme.md"
+license = { text = "MIT" }
+authors = [{ name = "Florian Cochard", email = "florian@ponoto.studio" }]
+maintainers = [{ name = "Florian Cochard", email = "florian@ponoto.studio" }]
+keywords = [
+    "netcdf",
+    "animation",
+    "visualization",
+    "climate",
+    "weather",
+    "oceanography",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Visualization",
+    "Topic :: Multimedia :: Video",
+]
+requires-python = ">=3.7"
+dependencies = [
+    "xarray>=2023.1.0",
+    "numpy>=1.21.0",
+    "matplotlib>=3.5.0",
+    "cartopy>=0.20.0",
+    "psutil>=5.8.0",
+    "netCDF4>=1.6.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=6.0", "pytest-cov>=2.0", "black>=21.0", "flake8>=3.8"]
+
+[project.urls]
+Homepage = "https://github.com/floriancochard/animate-netcdf"
+Repository = "https://github.com/floriancochard/animate-netcdf"
+Documentation = "https://github.com/floriancochard/animate-netcdf#readme"
+Issues = "https://github.com/floriancochard/animate-netcdf/issues"
+
+[project.scripts]
+animate-netcdf = "animate_netcdf.__main__:main"
+anc = "animate_netcdf.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["animate_netcdf*"]
+
+[tool.setuptools.package-data]
+animate_netcdf = ["*.py"]
+scripts = ["*.py"]
+
+[tool.setuptools.dynamic]
+version = { attr = "animate_netcdf.__version__" }

@@ -282,11 +282,11 @@ def main():
         response = input("Would you like to run the test suite now? (y/n): ").strip().lower()
         if response in ['y', 'yes']:
             print("\n🚀 Starting test suite...")
-            os.system(f"{sys.executable} run_tests.py --full")
+            os.system(f"{sys.executable} scripts/run_tests.py --full")
         else:
             print("\n💡 To run tests later, use:")
-            print("   python run_tests.py --full")
-            print("   python run_tests.py --categories config files animation")
+            print("   anc test --full")
+            print("   anc test --categories config files animation")
     except KeyboardInterrupt:
         print("\n\n👋 Validation completed. Run tests when ready!")
 
