@@ -10,7 +10,7 @@ This package provides functionality for:
 - File discovery and validation
 """
 
-__version__ = "1.0.2"
+__version__ = "1.7.0"
 __author__ = "Florian Cochard"
 __email__ = "florian@ponoto.studio"
 

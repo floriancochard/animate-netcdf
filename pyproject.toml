@@ -62,6 +62,3 @@ include = ["animate_netcdf*"]
 [tool.setuptools.package-data]
 animate_netcdf = ["*.py"]
 scripts = ["*.py"]
-
-[tool.setuptools.dynamic]
-version = { attr = "animate_netcdf.__version__" }
