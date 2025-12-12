@@ -10,9 +10,9 @@ This package provides functionality for:
 - File discovery and validation
 """
 
-__version__ = "1.7.0"
+__version__ = "1.7.1"
 __author__ = "Florian Cochard"
-__email__ = "florian@ponoto.studio"
+__email__ = "florian@weatherwise.fr"
 
 # Import main components for easy access
 from .core.app_controller import AppController

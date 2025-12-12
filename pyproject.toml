@@ -4,12 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "animate-netcdf"
-version = "1.7.0"
+version = "1.7.1"
 description = "A comprehensive tool for creating animations from NetCDF data files"
 readme = "readme.md"
-license = "MIT"
-authors = [{ name = "Florian Cochard", email = "florian@ponoto.studio" }]
-maintainers = [{ name = "Florian Cochard", email = "florian@ponoto.studio" }]
+license = { file = "LICENSE" }
+authors = [{ name = "Florian Cochard", email = "florian@weatherwise.fr" }]
+maintainers = [{ name = "Florian Cochard", email = "florian@weatherwise.fr" }]
 keywords = [
     "netcdf",
     "animation",

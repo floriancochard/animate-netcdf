@@ -11,9 +11,11 @@
 *.json
 
 # Data directory (contains large files)
+data
 data/
 
 # Documentation directory
+docs
 docs/
 
 # Python cache files

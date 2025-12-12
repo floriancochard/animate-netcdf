@@ -26,7 +26,7 @@ setup(
     name="animate-netcdf",
     version="1.0.2",
     author="Florian Cochard",
-    author_email="florian@ponoto.studio",  # Update with your actual email
+    author_email="florian@weatherwise.fr",  # Update with your actual email
     description="A comprehensive tool for creating animations from NetCDF data files",
     long_description=read_readme(),
     long_description_content_type="text/markdown",
