@@ -25,11 +25,49 @@ class DataProcessor:
         if data.size == 0:
             return data
         
+        # Ensure data is numeric and convert to float if needed
+        if not np.issubdtype(data.dtype, np.number):
+            data = data.astype(float)
+        
         # Calculate percentile threshold
-        threshold = np.percentile(data[data > 0], percentile) if np.any(data > 0) else 0
+        positive_data = data[data > 0]
+        if len(positive_data) > 0:
+            threshold = np.percentile(positive_data, percentile)
+        else:
+            threshold = 0
         
         # Create masked array where low values are masked
         filtered_data = np.where(data >= threshold, data, np.nan)
+        
+        return filtered_data
+    
+    @staticmethod
+    def filter_ignore_values(data: np.ndarray, ignore_values: List[float]) -> np.ndarray:
+        """Filter out specific values (e.g., placeholder values like 999).
+        
+        Args:
+            data: Input data array
+            ignore_values: List of values to mask (set to NaN)
+            
+        Returns:
+            np.ndarray: Data array with ignored values set to NaN
+        """
+        if data.size == 0 or not ignore_values:
+            return data
+        
+        # Ensure data is numeric and convert to float if needed
+        if not np.issubdtype(data.dtype, np.number):
+            data = data.astype(float)
+        
+        # Create a mask for all values to ignore
+        mask = np.zeros_like(data, dtype=bool)
+        for ignore_val in ignore_values:
+            # Use a small tolerance for floating point comparison
+            mask |= np.isclose(data, ignore_val, rtol=1e-5, atol=1e-8)
+        
+        # Set ignored values to NaN
+        filtered_data = data.copy()
+        filtered_data[mask] = np.nan
         
         return filtered_data
     
@@ -43,7 +81,8 @@ class DataProcessor:
         """Prepare data for plotting by handling extra dimensions and zooming."""
         
         # Get the data array for the specific time step
-        data_array = data_array.isel({animate_dim: time_step})
+        if animate_dim in data_array.dims:
+            data_array = data_array.isel({animate_dim: time_step})
         
         # Find which dimensions are spatial
         spatial_dims_in_data = [dim for dim in data_array.dims if dim in DataProcessor.SPATIAL_DIMS]
@@ -83,6 +122,16 @@ class DataProcessor:
         # Convert to numpy array
         data = data_array.values
         
+        # Handle single-point data (1x1 spatial dimensions)
+        if len(data.shape) == 0:  # Scalar data
+            if verbose:
+                print(f"📊 Single-point data detected, creating 1x1 array")
+            data = np.array([[data]])
+        elif len(data.shape) == 1:  # 1D data
+            if verbose:
+                print(f"📊 1D data detected, reshaping to 2D")
+            data = data.reshape(-1, 1)
+        
         # Verify we have 2D data
         if len(data.shape) != 2:
             raise ValueError(f"Data must be 2D for plotting, got shape {data.shape}. "
@@ -119,13 +168,25 @@ class DataProcessor:
             spatial_coords = []
             for coord_name in available_coords:
                 coord = coords[coord_name]
-                if len(coord.shape) == 1 and coord.shape[0] in [data_array.shape[0], data_array.shape[1]]:
+                # Check if coordinate matches data dimensions (1D or 2D)
+                if (len(coord.shape) == 1 and coord.shape[0] in [data_array.shape[0], data_array.shape[1]]) or \
+                   (len(coord.shape) == 2 and coord.shape == (data_array.shape[0], data_array.shape[1])):
                     spatial_coords.append(coord_name)
             
             if len(spatial_coords) >= 2:
                 # Use the first two spatial coordinates found
                 coord1 = coords[spatial_coords[0]].values
                 coord2 = coords[spatial_coords[1]].values
+                
+                # Ensure coordinates are numeric
+                try:
+                    coord1 = coord1.astype(float)
+                    coord2 = coord2.astype(float)
+                except (ValueError, TypeError):
+                    print(f"⚠️  Could not convert coordinates to float, using indices")
+                    lats = np.arange(data_array.shape[0])
+                    lons = np.arange(data_array.shape[1])
+                    return lats, lons
                 
                 # Determine which is lat/lon based on typical ranges
                 if np.max(coord1) > np.max(coord2):
@@ -139,8 +200,25 @@ class DataProcessor:
             else:
                 # Fallback: create coordinate arrays based on data shape
                 print(f"⚠️  No spatial coordinates found, using array indices")
-                lats = np.arange(data_array.shape[0])
-                lons = np.arange(data_array.shape[1])
+                # Handle single-point data
+                if len(data_array.shape) == 0:
+                    lats = np.array([0.0])
+                    lons = np.array([0.0])
+                elif len(data_array.shape) == 1:
+                    lats = np.arange(data_array.shape[0])
+                    lons = np.array([0.0])
+                else:
+                    lats = np.arange(data_array.shape[0])
+                    lons = np.arange(data_array.shape[1])
+        
+        # Ensure coordinates are numeric
+        try:
+            lats = lats.astype(float)
+            lons = lons.astype(float)
+        except (ValueError, TypeError):
+            print(f"⚠️  Could not convert coordinates to float, using indices")
+            lats = np.arange(data_array.shape[0])
+            lons = np.arange(data_array.shape[1])
         
         return lats, lons
     
@@ -205,11 +283,23 @@ class DataProcessor:
     
     @staticmethod
     def get_animation_dimension(dataset: xr.Dataset) -> Optional[str]:
-        """Find the first dimension that's not spatial (suitable for animation)."""
-        for dim in dataset.dims:
-            if dim not in DataProcessor.SPATIAL_DIMS:
-                return dim
-        return None
+        """Find the best dimension for animation, prioritizing time-related dimensions."""
+        # Define time-related dimension patterns (in order of preference)
+        time_patterns = ['time', 'Time', 'TIME', 'time_station', 'step', 'Step', 'STEP']
+        
+        # First, look for time-related dimensions
+        for pattern in time_patterns:
+            for dim in dataset.dims:
+                if pattern in dim and dim not in DataProcessor.SPATIAL_DIMS:
+                    return dim
+        
+        # If no time-related dimension found, look for the largest non-spatial dimension
+        non_spatial_dims = [dim for dim in dataset.dims if dim not in DataProcessor.SPATIAL_DIMS]
+        if not non_spatial_dims:
+            return None
+        
+        # Return the dimension with the most steps
+        return max(non_spatial_dims, key=lambda dim: len(dataset[dim]))
     
     @staticmethod
     def get_spatial_dimensions(dataset: xr.Dataset) -> List[str]:

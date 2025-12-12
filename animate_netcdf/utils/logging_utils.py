@@ -59,14 +59,9 @@ class LoggingManager:
             urllib3_logger.addHandler(urllib3_handler)
     
     @staticmethod
-    def setup_multi_file_logging():
-        """Set up logging for multi-file animator."""
-        return LoggingManager.setup_logger('MultiFileAnimator', emoji='🎬')
-    
-    @staticmethod
-    def setup_single_file_logging():
-        """Set up logging for single file animator."""
-        return LoggingManager.setup_logger('SingleFileAnimator', emoji='🎬')
+    def setup_visualizer_logging():
+        """Set up logging for NetCDF visualizer."""
+        return LoggingManager.setup_logger('NetCDFVisualizer', emoji='🎬')
     
     @staticmethod
     def setup_config_logging():
@@ -83,7 +78,6 @@ class LoggingManager:
 def setup_all_logging():
     """Set up logging for all components."""
     LoggingManager.setup_cartopy_logging()
-    LoggingManager.setup_multi_file_logging()
-    LoggingManager.setup_single_file_logging()
+    LoggingManager.setup_visualizer_logging()
     LoggingManager.setup_config_logging()
     LoggingManager.setup_file_manager_logging() 

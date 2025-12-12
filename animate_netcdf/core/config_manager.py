@@ -134,6 +134,18 @@ class AnimationConfig:
     # Zoom settings
     zoom_factor: float = 1.0
     
+    # Map and visualization settings
+    offline: bool = False
+    
+    # Designer mode settings
+    designer_mode: bool = False
+    
+    # Output appearance settings
+    transparent: bool = False
+    
+    # Data filtering settings
+    ignore_values: List[float] = field(default_factory=list)
+    
     # Validation errors
     _validation_errors: List[str] = field(default_factory=list, repr=False)
     
@@ -162,7 +174,11 @@ class AnimationConfig:
             'overwrite_existing': self.overwrite_existing,
             'memory_limit_mb': self.memory_limit_mb,
             'max_files_preview': self.max_files_preview,
-            'zoom_factor': self.zoom_factor
+            'zoom_factor': self.zoom_factor,
+            'offline': self.offline,
+            'designer_mode': self.designer_mode,
+            'transparent': self.transparent,
+            'ignore_values': self.ignore_values
         }
     
     def from_dict(self, config_dict: Dict[str, Any]) -> None:
@@ -189,6 +205,24 @@ class AnimationConfig:
                     except ValueError:
                         self._validation_errors.append(f"Invalid output_format: {value}. Must be one of {[f.value for f in OutputFormat]}")
                         continue
+                
+                elif key == 'ignore_values':
+                    # Ensure ignore_values is a list of floats
+                    if isinstance(value, list):
+                        try:
+                            value = [float(v) for v in value]
+                        except (ValueError, TypeError):
+                            self._validation_errors.append(f"Invalid ignore_values: {value}. Must be a list of numbers")
+                            continue
+                    elif value is None:
+                        value = []
+                    else:
+                        # Try to convert single value to list
+                        try:
+                            value = [float(value)]
+                        except (ValueError, TypeError):
+                            self._validation_errors.append(f"Invalid ignore_values: {value}. Must be a list of numbers")
+                            continue
                 
                 setattr(self, key, value)
             else:
@@ -521,6 +555,24 @@ class ConfigManager:
                     print("❌ Zoom factor must be between 0.1 and 10.0")
             except ValueError:
                 print("❌ Please enter a valid number")
+        
+        # Ignore values
+        print(f"\n🔍 Some NetCDF files use placeholder values (e.g., 999, -999) for missing data.")
+        print("   These values should be ignored during plotting.")
+        while True:
+            try:
+                ignore_input = input("Enter values to ignore (comma-separated, e.g., 999,-999, or press Enter for none): ").strip()
+                if not ignore_input:
+                    self.config.ignore_values = []
+                    break
+                
+                # Parse comma-separated values
+                values = [float(v.strip()) for v in ignore_input.split(',')]
+                self.config.ignore_values = values
+                print(f"✅ Will ignore values: {values}")
+                break
+            except ValueError:
+                print("❌ Invalid input. Please enter comma-separated numbers (e.g., 999,-999)")
         
         # Validate configuration before saving
         is_valid, errors = self.config.get_validation_summary()

@@ -20,8 +20,7 @@ from .core.config_manager import ConfigManager, AnimationConfig
 from .core.file_manager import NetCDFFileManager
 from .core.cli_parser import CLIParser
 
-from .animators.single_file_animator import SingleFileAnimator
-from .animators.multi_file_animator import MultiFileAnimator
+from .visualizers.unified_visualizer import NetCDFVisualizer
 
 from .utils.data_processing import DataProcessor
 from .utils.plot_utils import PlotUtils
@@ -34,8 +33,7 @@ __all__ = [
     'AnimationConfig',
     'NetCDFFileManager',
     'CLIParser',
-    'SingleFileAnimator',
-    'MultiFileAnimator',
+    'NetCDFVisualizer',
     'DataProcessor',
     'PlotUtils',
     'ffmpeg_manager',

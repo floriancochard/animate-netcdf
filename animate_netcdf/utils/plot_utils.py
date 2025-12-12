@@ -84,10 +84,14 @@ class PlotUtils:
             print("⚠️  Cartopy not available for map checking")
     
     @staticmethod
-    def add_cartopy_features(ax):
+    def add_cartopy_features(ax, offline: bool = False):
         """Add cartopy features with download checking and logging."""
         if not CARTOPY_AVAILABLE:
             print("⚠️  Cartopy not available. Cannot add map features.")
+            return
+        
+        if offline:
+            print("🗺️  Offline mode: Skipping cartopy map features")
             return
         
         try:
@@ -100,13 +104,18 @@ class PlotUtils:
             else:
                 print("🗺️  Using existing cartopy maps")
             
-            # Add features (cartopy will download if needed)
-            ax.add_feature(cfeature.COASTLINE, linewidth=1.0, edgecolor='black')
-            ax.add_feature(cfeature.BORDERS, linewidth=0.8, edgecolor='gray')
-            ax.add_feature(cfeature.STATES, linewidth=0.5, edgecolor='lightgray')
+            # Add features with lower resolution to avoid download timeouts
+            ax.add_feature(cfeature.COASTLINE.with_scale('50m'), linewidth=1.5, edgecolor='black', alpha=0.9)
+            ax.add_feature(cfeature.BORDERS.with_scale('50m'), linewidth=1.0, edgecolor='darkred', alpha=0.8)
+            # Skip STATES and OCEAN/LAND as they may cause download issues
+            # ax.add_feature(cfeature.STATES.with_scale('50m'), linewidth=0.8, edgecolor='darkblue', alpha=0.7)
+            # ax.add_feature(cfeature.OCEAN.with_scale('50m'), color='lightblue', alpha=0.4)
+            # ax.add_feature(cfeature.LAND.with_scale('50m'), color='lightgray', alpha=0.3)
             
             if not maps_exist:
                 print("🗺️  Cartopy maps downloaded successfully")
+            else:
+                print("🗺️  Map features added successfully")
                 
         except Exception as e:
             print(f"⚠️  Warning: Could not add cartopy features: {e}")
@@ -166,13 +175,13 @@ class PlotUtils:
         return fig, ax
     
     @staticmethod
-    def setup_geographic_plot(ax, lats: np.ndarray, lons: np.ndarray):
+    def setup_geographic_plot(ax, lats: np.ndarray, lons: np.ndarray, offline: bool = False):
         """Set up geographic plot with features and gridlines."""
         if not CARTOPY_AVAILABLE:
             raise ImportError("Cartopy not available for geographic plots")
         
         # Add Cartopy features
-        PlotUtils.add_cartopy_features(ax)
+        PlotUtils.add_cartopy_features(ax, offline=offline)
         
         # Add gridlines
         gl = ax.gridlines(draw_labels=True, linewidth=0.5, alpha=0.7, 
@@ -187,7 +196,7 @@ class PlotUtils:
     @staticmethod
     def create_efficient_plot(ax, data: np.ndarray, lats: np.ndarray, lons: np.ndarray,
                              vmin: Optional[float] = None, vmax: Optional[float] = None,
-                             cmap: str = 'Blues', alpha: float = 0.8):
+                             cmap: str = 'Blues', alpha: float = 0.6):
         """Create an efficient imshow plot on geographic axes."""
         if not CARTOPY_AVAILABLE:
             raise ImportError("Cartopy not available for geographic plots")
@@ -289,6 +298,106 @@ class PlotUtils:
         """Generate output filename with timestamp."""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         return f"{timestamp}_{variable}_{plot_type}_animation.{output_format}"
+    
+    @staticmethod
+    def create_designer_geographic_plot(plot_type: str = 'efficient', figsize: Tuple[int, int] = (15, 10)):
+        """Create a geographic plot for designer mode with transparent background."""
+        if not CARTOPY_AVAILABLE:
+            raise ImportError("Cartopy not available for geographic plots")
+        
+        fig, ax = plt.subplots(figsize=figsize, 
+                              subplot_kw={'projection': ccrs.PlateCarree()})
+        
+        # Set completely transparent background
+        fig.patch.set_alpha(0.0)
+        fig.patch.set_facecolor('none')
+        ax.patch.set_alpha(0.0)
+        ax.patch.set_facecolor('none')
+        
+        return fig, ax
+    
+    @staticmethod
+    def setup_designer_geographic_plot(ax, lats: np.ndarray, lons: np.ndarray, offline: bool = False):
+        """Set up geographic plot for designer mode: only data and topography."""
+        if not CARTOPY_AVAILABLE:
+            raise ImportError("Cartopy not available for geographic plots")
+        
+        # Add only topography (land/terrain) features - no coastlines, borders, or other decorations
+        if not offline:
+            # Add only land/terrain features for topography
+            ax.add_feature(cfeature.LAND, alpha=0.3, color='lightgray', zorder=0)
+            # Optionally add terrain/elevation if available
+            try:
+                ax.add_feature(cfeature.NaturalEarthFeature('physical', 'land', '50m'), 
+                             alpha=0.2, facecolor='lightgray', zorder=0)
+            except:
+                pass
+        else:
+            # Minimal setup for offline mode
+            pass
+        
+        # Set extent without any gridlines or labels
+        ax.set_extent([lons.min(), lons.max(), lats.min(), lats.max()], 
+                     crs=ccrs.PlateCarree())
+        
+        # Explicitly remove all gridlines and labels
+        gl = ax.gridlines(draw_labels=False, linewidth=0, alpha=0)
+        gl.xlines = False
+        gl.ylines = False
+        
+        # Remove all axis labels, ticks, and spines
+        ax.set_xticks([])
+        ax.set_yticks([])
+        ax.set_xlabel('')
+        ax.set_ylabel('')
+        
+        # Remove spines (borders)
+        for spine in ax.spines.values():
+            spine.set_visible(False)
+    
+    @staticmethod
+    def create_designer_efficient_plot(ax, data: np.ndarray, lats: np.ndarray, lons: np.ndarray,
+                                     vmin: Optional[float] = None, vmax: Optional[float] = None,
+                                     cmap: str = 'Blues', alpha: float = 0.8):
+        """Create an efficient imshow plot for designer mode."""
+        if not CARTOPY_AVAILABLE:
+            raise ImportError("Cartopy not available for geographic plots")
+        
+        im = ax.imshow(data, cmap=cmap, alpha=alpha,
+                      extent=[lons.min(), lons.max(), lats.min(), lats.max()],
+                      transform=ccrs.PlateCarree(), origin='lower',
+                      vmin=vmin, vmax=vmax)
+        return im
+    
+    @staticmethod
+    def create_designer_contour_plot(ax, data: np.ndarray, lats: np.ndarray, lons: np.ndarray,
+                                   vmin: Optional[float] = None, vmax: Optional[float] = None,
+                                   cmap: str = 'Blues', levels: int = 20):
+        """Create a contour plot for designer mode."""
+        if not CARTOPY_AVAILABLE:
+            raise ImportError("Cartopy not available for geographic plots")
+        
+        if vmin is None:
+            vmin = np.nanmin(data)
+        if vmax is None:
+            vmax = np.nanmax(data)
+        
+        levels_array = np.linspace(vmin, vmax, levels)
+        contour = ax.contourf(lons, lats, data, levels=levels_array, cmap=cmap,
+                             transform=ccrs.PlateCarree())
+        return contour
+    
+    @staticmethod
+    def add_designer_colorbar(im, ax, variable: str, units: str = ""):
+        """Add colorbar for designer mode without labels."""
+        if hasattr(im, 'set_array'):  # imshow
+            cbar = plt.colorbar(im, ax=ax, shrink=0.8)
+        else:  # contour
+            cbar = plt.colorbar(im, ax=ax, shrink=0.8)
+        
+        # Remove colorbar label for designer mode
+        cbar.set_label('')
+        return cbar
     
     @staticmethod
     def get_troubleshooting_tips() -> List[str]:
