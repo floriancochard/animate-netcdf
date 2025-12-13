@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "animate-netcdf"
-version = "1.7.1"
+version = "1.7.2"
 description = "A comprehensive tool for creating animations from NetCDF data files"
 readme = "readme.md"
 license = { file = "LICENSE" }
