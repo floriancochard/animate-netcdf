@@ -41,4 +41,4 @@ jobs:
 
       - name: Run tests
         run: |
-          python -m pytest tests/ -v --cov=animate_netcdf
+          python -m pytest -v --cov=animate_netcdf
