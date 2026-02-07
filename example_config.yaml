@@ -1,0 +1,21 @@
+# Example visualization config for anc (animate_netcdf).
+# Use: anc *.nc --config example_config.yaml
+# CLI options override values from this file.
+# For YAML support: pip install pyyaml
+# Output filename is auto-generated (timestamp + variable) when output_pattern is omitted.
+
+variable: temperature
+output_format: mp4 # png | mp4
+fps: 10
+zoom_factor: 1.0
+percentile: 0
+# Colormap: use a matplotlib name from colour_palettes (e.g. RdYlBu_r, coolwarm, viridis, Blues, YlOrRd)
+cmap: RdYlBu_r
+# Optional fixed color scale (leave null for data-based range)
+vmin: null
+vmax: null
+designer_mode: false
+designer_square_crop: false
+transparent: false
+ignore_values: []
+overwrite_existing: false

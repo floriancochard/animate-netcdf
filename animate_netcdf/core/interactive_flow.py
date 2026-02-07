@@ -9,9 +9,14 @@ import xarray as xr
 from typing import Optional, Dict, Any, List, Tuple
 from datetime import datetime
 
-from animate_netcdf.core.config_manager import AnimationConfig, PlotType, OutputFormat
+from animate_netcdf.core.config_manager import AnimationConfig, OutputFormat
 from animate_netcdf.utils.netcdf_explorer import NetCDFExplorer
 from animate_netcdf.utils.data_processing import DataProcessor
+from animate_netcdf.utils.colour_palettes import (
+    PALETTES,
+    get_palette_by_id,
+    get_suggested_palette_ids_for_variable,
+)
 
 
 class InteractiveFlow:
@@ -45,11 +50,11 @@ class InteractiveFlow:
             return None
         config.variable = variable
         
-        # Step 2: Plot type
-        plot_type = self._select_plot_type()
-        if not plot_type:
+        # Step 2: Colour palette
+        cmap = self._select_colour_palette(config.variable)
+        if cmap is None:
             return None
-        config.plot_type = PlotType(plot_type)
+        config.cmap = cmap
         
         # Step 3: Output format (for multi-file only)
         if is_multi_file:
@@ -59,13 +64,13 @@ class InteractiveFlow:
             config.output_format = OutputFormat(output_format)
         
         # Step 4: Output filename
-        output_file = self._get_output_filename(variable, plot_type, is_multi_file)
+        output_file = self._get_output_filename(variable, is_multi_file)
         if not output_file:
             return None
         config.output_pattern = output_file
         
         # Step 5: FPS (for animations)
-        if plot_type in ['efficient', 'contour'] and is_multi_file:
+        if is_multi_file:
             fps = self._get_fps()
             config.fps = fps
         
@@ -81,12 +86,19 @@ class InteractiveFlow:
         ignore_values = self._get_ignore_values()
         config.ignore_values = ignore_values
         
-        # Step 9: Designer mode
+        # Step 9: Color scale range (vmin, vmax)
+        vmin, vmax = self._get_color_scale_range()
+        config.vmin = vmin
+        config.vmax = vmax
+        
+        # Step 10: Designer mode
         designer_mode = self._get_designer_mode()
         config.designer_mode = designer_mode
+        if designer_mode:
+            config.designer_square_crop = self._get_designer_square_crop()
         
-        # Step 10: Transparent background (for PNG)
-        if not is_multi_file or output_format == 'png':
+        # Step 11: Transparent background (for PNG)
+        if not is_multi_file or (is_multi_file and config.output_format.value == 'png'):
             transparent = self._get_transparent_background()
             config.transparent = transparent
         
@@ -168,29 +180,6 @@ class InteractiveFlow:
         
         return variables
     
-    def _select_plot_type(self) -> Optional[str]:
-        """Select plot type."""
-        print("\n🎨 Step 2: Plot Type Selection")
-        print("-" * 40)
-        print("1. Efficient (fast, imshow with Cartopy) - Recommended")
-        print("2. Contour (detailed with Cartopy)")
-        print("3. Heatmap (simple grid)")
-        
-        while True:
-            try:
-                choice = input("\nSelect plot type (1-3): ").strip()
-                if choice == "1":
-                    return "efficient"
-                elif choice == "2":
-                    return "contour"
-                elif choice == "3":
-                    return "heatmap"
-                else:
-                    print("❌ Please enter a number between 1 and 3")
-            except KeyboardInterrupt:
-                print("\n⚠️  Operation cancelled")
-                return None
-    
     def _select_output_format(self) -> Optional[str]:
         """Select output format for multi-file visualization."""
         print("\n💾 Step 3: Output Format")
@@ -211,8 +200,40 @@ class InteractiveFlow:
                 print("\n⚠️  Operation cancelled")
                 return None
     
-    def _get_output_filename(self, variable: str, plot_type: str, 
-                            is_multi_file: bool) -> Optional[str]:
+    def _select_colour_palette(self, variable: Optional[str]) -> Optional[str]:
+        """Select colour palette interactively. Returns matplotlib cmap name."""
+        print("\n🎨 Step 3: Colour Palette")
+        print("-" * 40)
+        suggested = get_suggested_palette_ids_for_variable(variable or "")
+        id_to_cmap = {pid: get_palette_by_id(pid) for pid in suggested}
+        suggested_cmap = id_to_cmap.get(suggested[0]) if suggested else "Blues"
+        
+        for i, (pid, name, cmap) in enumerate(PALETTES, 1):
+            mark = " (suggested)" if pid in suggested else ""
+            print(f"  {i:2}. {name}{mark}")
+        
+        while True:
+            try:
+                choice = input(
+                    f"\nSelect palette (1-{len(PALETTES)}, or Enter for default): "
+                ).strip()
+                if not choice:
+                    cmap = suggested_cmap or "Blues"
+                    print(f"✅ Using: {cmap}")
+                    return cmap
+                idx = int(choice) - 1
+                if 0 <= idx < len(PALETTES):
+                    cmap = PALETTES[idx][2]
+                    print(f"✅ Using: {PALETTES[idx][1]} ({cmap})")
+                    return cmap
+                print(f"❌ Please enter a number between 1 and {len(PALETTES)}")
+            except ValueError:
+                print("❌ Please enter a valid number")
+            except KeyboardInterrupt:
+                print("\n⚠️  Operation cancelled")
+                return None
+    
+    def _get_output_filename(self, variable: str, is_multi_file: bool) -> Optional[str]:
         """Get output filename from user."""
         print("\n💾 Step 4: Output Filename")
         print("-" * 40)
@@ -269,8 +290,8 @@ class InteractiveFlow:
                     zoom_factor = 1.0
                 else:
                     zoom_factor = float(zoom_input)
-                    if zoom_factor <= 0 or zoom_factor > 10:
-                        print("❌ Zoom factor must be between 0.1 and 10.0. Using default: 1.0")
+                    if zoom_factor <= 0 or zoom_factor > 125:
+                        print("❌ Zoom factor must be between 0.1 and 125.0. Using default: 1.0")
                         zoom_factor = 1.0
                 print(f"✅ Zoom factor: {zoom_factor}")
                 return zoom_factor
@@ -288,22 +309,22 @@ class InteractiveFlow:
         
         while True:
             try:
-                percentile_input = input("Percentile threshold (default: 5): ").strip()
+                percentile_input = input("Percentile threshold (default: 0): ").strip()
                 if not percentile_input:
-                    percentile = 5
+                    percentile = 0
                 else:
                     percentile = int(percentile_input)
                     if percentile < 0 or percentile > 100:
-                        print("❌ Percentile must be between 0 and 100. Using default: 5")
+                        print("❌ Percentile must be between 0 and 100. Using default: 0")
                         percentile = 5
                 print(f"✅ Percentile: {percentile}")
                 return percentile
             except ValueError:
-                print("❌ Invalid percentile. Using default: 5")
-                return 5
+                print("❌ Invalid percentile. Using default: 0")
+                return 0
             except KeyboardInterrupt:
                 print("\n⚠️  Operation cancelled")
-                return 5
+                return 0
     
     def _get_ignore_values(self) -> List[float]:
         """Get values to ignore from user."""
@@ -327,9 +348,39 @@ class InteractiveFlow:
                 print("\n⚠️  Operation cancelled")
                 return []
     
+    def _get_color_scale_range(self) -> Tuple[Optional[float], Optional[float]]:
+        """Get optional fixed color scale range (vmin, vmax) from user."""
+        print("\n📐 Step 9: Color Scale Range")
+        print("-" * 40)
+        print("Set fixed min/max for the color scale (e.g. 285,305 for temperature in K).")
+        print("Leave empty to use data-based range.")
+        
+        while True:
+            try:
+                range_input = input("Enter min,max (e.g. 285,305) or press Enter for data range: ").strip()
+                if not range_input:
+                    print("✅ Using data-based range")
+                    return (None, None)
+                parts = [p.strip() for p in range_input.replace(',', ' ').split()]
+                if len(parts) == 2:
+                    vmin_val = float(parts[0])
+                    vmax_val = float(parts[1])
+                    if vmin_val < vmax_val:
+                        print(f"✅ Color scale: {vmin_val} to {vmax_val}")
+                        return (vmin_val, vmax_val)
+                    else:
+                        print("❌ Min must be less than max")
+                else:
+                    print("❌ Enter two numbers separated by comma (e.g. 285,305)")
+            except ValueError:
+                print("❌ Invalid input. Enter two numbers (e.g. 285,305)")
+            except KeyboardInterrupt:
+                print("\n⚠️  Operation cancelled")
+                return (None, None)
+    
     def _get_designer_mode(self) -> bool:
         """Get designer mode preference."""
-        print("\n🎨 Step 9: Designer Mode")
+        print("\n🎨 Step 10: Designer Mode")
         print("-" * 40)
         print("Designer mode: clean background, no coordinates, no title")
         
@@ -345,10 +396,29 @@ class InteractiveFlow:
             except KeyboardInterrupt:
                 print("\n⚠️  Operation cancelled")
                 return False
+
+    def _get_designer_square_crop(self) -> bool:
+        """Get designer square-crop preference (square output, no padding)."""
+        print("\n📐 Square crop (designer mode)")
+        print("-" * 40)
+        print("Square crop: output is a square centered on the map, no padding or margins")
+        
+        while True:
+            try:
+                choice = input("Use square crop? (y/n, default: n): ").strip().lower()
+                if not choice or choice == 'n':
+                    return False
+                elif choice == 'y':
+                    return True
+                else:
+                    print("❌ Please enter 'y' or 'n'")
+            except KeyboardInterrupt:
+                print("\n⚠️  Operation cancelled")
+                return False
     
     def _get_transparent_background(self) -> bool:
         """Get transparent background preference."""
-        print("\n🎨 Step 10: Transparent Background")
+        print("\n🎨 Step 11: Transparent Background")
         print("-" * 40)
         
         while True:

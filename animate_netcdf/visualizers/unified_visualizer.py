@@ -19,6 +19,12 @@ from animate_netcdf.utils.data_processing import DataProcessor
 from animate_netcdf.utils.plot_utils import PlotUtils
 from animate_netcdf.utils.ffmpeg_utils import ffmpeg_manager
 
+# Designer mode export: high-resolution defaults (applied whenever designer_mode is True)
+DESIGNER_EXPORT_DPI = 100
+DESIGNER_EXPORT_BITRATE = 5000  # kbps
+DEFAULT_EXPORT_DPI = 72
+DEFAULT_EXPORT_BITRATE = 1000  # kbps
+
 
 class NetCDFVisualizer:
     """Unified visualizer for both single and multi-file NetCDF visualization."""
@@ -33,6 +39,10 @@ class NetCDFVisualizer:
         # Set up cartopy logging
         self.plot_utils.setup_cartopy_logging()
         self.plot_utils.check_cartopy_maps()
+    
+    def _get_cmap(self) -> str:
+        """Return matplotlib colormap name from config, default 'Blues'."""
+        return (self.config.cmap or "Blues").strip() or "Blues"
     
     def visualize(self, input_path: str) -> bool:
         """Main entry point for visualization.
@@ -142,7 +152,7 @@ class NetCDFVisualizer:
         
         try:
             variable = ds[self.config.variable]
-            plot_type = self.config.plot_type.value if hasattr(self.config.plot_type, 'value') else 'efficient'
+            plot_type = getattr(self.config, 'plot_type', 'efficient') or 'efficient'
             
             # Get animation dimension
             animate_dim = self._get_animation_dimension(ds)
@@ -162,23 +172,36 @@ class NetCDFVisualizer:
             if plot_type in ['efficient', 'contour']:
                 # Use designer-specific functions if in designer mode
                 if self.config.designer_mode:
-                    fig, ax = self.plot_utils.create_designer_geographic_plot(plot_type)
-                    self.plot_utils.setup_designer_geographic_plot(ax, lats, lons, offline=self.config.offline)
+                    square_crop = getattr(self.config, 'designer_square_crop', False)
+                    fig, ax = self.plot_utils.create_designer_geographic_plot(
+                        plot_type, square_crop=square_crop
+                    )
+                    self.plot_utils.setup_designer_geographic_plot(
+                        ax, lats, lons, square_crop=square_crop
+                    )
                     
                     if plot_type == 'efficient':
-                        im = self.plot_utils.create_designer_efficient_plot(ax, filtered_data, lats, lons)
+                        im = self.plot_utils.create_designer_efficient_plot(
+                            ax, filtered_data, lats, lons, cmap=self._get_cmap()
+                        )
                     else:
-                        im = self.plot_utils.create_designer_contour_plot(ax, filtered_data, lats, lons)
+                        im = self.plot_utils.create_designer_contour_plot(
+                            ax, filtered_data, lats, lons, cmap=self._get_cmap()
+                        )
                     
                     # No colorbar in designer mode
                 else:
                     fig, ax = self.plot_utils.create_geographic_plot(plot_type)
-                    self.plot_utils.setup_geographic_plot(ax, lats, lons, offline=self.config.offline)
+                    self.plot_utils.setup_geographic_plot(ax, lats, lons)
                     
                     if plot_type == 'efficient':
-                        im = self.plot_utils.create_efficient_plot(ax, filtered_data, lats, lons)
+                        im = self.plot_utils.create_efficient_plot(
+                            ax, filtered_data, lats, lons, cmap=self._get_cmap()
+                        )
                     else:
-                        im = self.plot_utils.create_contour_plot(ax, filtered_data, lats, lons)
+                        im = self.plot_utils.create_contour_plot(
+                            ax, filtered_data, lats, lons, cmap=self._get_cmap()
+                        )
                     
                     units = variable.attrs.get("units", "")
                     self.plot_utils.add_colorbar(im, ax, self.config.variable, units)
@@ -192,7 +215,7 @@ class NetCDFVisualizer:
             else:
                 # Heatmap
                 fig, ax = self.plot_utils.create_heatmap_plot()
-                im = ax.imshow(filtered_data, cmap='Blues', aspect='auto')
+                im = ax.imshow(filtered_data, cmap=self._get_cmap(), aspect='auto')
                 units = variable.attrs.get("units", "")
                 self.plot_utils.add_colorbar(im, ax, self.config.variable, units)
             
@@ -201,6 +224,8 @@ class NetCDFVisualizer:
             if self.config.transparent or self.config.designer_mode:
                 save_kwargs['transparent'] = True
                 save_kwargs['facecolor'] = 'none'
+            if getattr(self.config, 'designer_square_crop', False):
+                save_kwargs['pad_inches'] = 0
             
             plt.savefig(output_file, **save_kwargs)
             plt.close(fig)
@@ -266,28 +291,6 @@ class NetCDFVisualizer:
             return False
         
         try:
-            # Get spatial coordinates from first file
-            spatial_coords = file_manager.get_spatial_coordinates()
-            if not spatial_coords:
-                print("❌ No spatial coordinates found")
-                return False
-            
-            # Determine coordinate names
-            lat_coord = None
-            lon_coord = None
-            for coord in ['lat', 'latitude']:
-                if coord in spatial_coords:
-                    lat_coord = coord
-                    break
-            for coord in ['lon', 'longitude']:
-                if coord in spatial_coords:
-                    lon_coord = coord
-                    break
-            
-            if not lat_coord or not lon_coord:
-                print("❌ Could not determine latitude/longitude coordinates")
-                return False
-            
             # Pre-load data for global colorbar if needed
             global_data_range = None
             if self.config.global_colorbar and self.config.pre_scan_files:
@@ -295,48 +298,61 @@ class NetCDFVisualizer:
                 global_data_range = self._pre_scan_data_range(files)
             
             # Create figure
-            plot_type = self.config.plot_type.value if hasattr(self.config.plot_type, 'value') else 'efficient'
+            plot_type = getattr(self.config, 'plot_type', 'efficient') or 'efficient'
             
             # Use designer-specific functions if in designer mode
+            square_crop = getattr(self.config, 'designer_square_crop', False)
             if self.config.designer_mode:
-                fig, ax = self.plot_utils.create_designer_geographic_plot(plot_type)
+                fig, ax = self.plot_utils.create_designer_geographic_plot(
+                    plot_type, square_crop=square_crop
+                )
             else:
                 fig, ax = self.plot_utils.create_geographic_plot(plot_type)
             
-            # Set up geographic plot
-            lat_min = spatial_coords[lat_coord]['min']
-            lat_max = spatial_coords[lat_coord]['max']
-            lon_min = spatial_coords[lon_coord]['min']
-            lon_max = spatial_coords[lon_coord]['max']
-            
-            lats = np.linspace(lat_min, lat_max, 100)
-            lons = np.linspace(lon_min, lon_max, 100)
+            # Load first file and get zoomed data and coordinates (so map extent matches zoomed data)
+            with xr.open_dataset(files[0]) as ds:
+                if self.config.variable not in ds.data_vars:
+                    print(f"❌ Variable '{self.config.variable}' not found in first file")
+                    return False
+                data_array = ds[self.config.variable]
+                data, lats, lons = self.data_processor.prepare_data_for_plotting(
+                    data_array, time_step=0, animate_dim='time',
+                    level_index=self.config.level_index, zoom_factor=self.config.zoom_factor,
+                    verbose=False
+                )
+            initial_data = self._apply_filters(data)
             
             if self.config.designer_mode:
-                self.plot_utils.setup_designer_geographic_plot(ax, lats, lons, offline=self.config.offline)
+                self.plot_utils.setup_designer_geographic_plot(
+                    ax, lats, lons, square_crop=square_crop
+                )
             else:
-                self.plot_utils.setup_geographic_plot(ax, lats, lons, offline=self.config.offline)
-            
-            # Initialize plot with first file
-            initial_data = self._load_file_data(files[0])
-            if initial_data is None:
-                return False
+                self.plot_utils.setup_geographic_plot(ax, lats, lons)
             
             vmin, vmax = self._get_colorbar_range(initial_data, global_data_range)
             
+            cmap = self._get_cmap()
             if self.config.designer_mode:
                 if plot_type == 'efficient':
-                    im = self.plot_utils.create_designer_efficient_plot(ax, initial_data, lats, lons, vmin, vmax)
+                    im = self.plot_utils.create_designer_efficient_plot(
+                        ax, initial_data, lats, lons, vmin, vmax, cmap=cmap
+                    )
                 else:
                     levels = np.linspace(vmin, vmax, 20)
-                    im = self.plot_utils.create_designer_contour_plot(ax, initial_data, lats, lons, vmin, vmax, levels=levels)
+                    im = self.plot_utils.create_designer_contour_plot(
+                        ax, initial_data, lats, lons, vmin, vmax, levels=levels, cmap=cmap
+                    )
                 # No colorbar in designer mode
             else:
                 if plot_type == 'efficient':
-                    im = self.plot_utils.create_efficient_plot(ax, initial_data, lats, lons, vmin, vmax)
+                    im = self.plot_utils.create_efficient_plot(
+                        ax, initial_data, lats, lons, vmin, vmax, cmap=cmap
+                    )
                 else:
                     levels = np.linspace(vmin, vmax, 20)
-                    im = self.plot_utils.create_contour_plot(ax, initial_data, lats, lons, vmin, vmax, levels=levels)
+                    im = self.plot_utils.create_contour_plot(
+                        ax, initial_data, lats, lons, vmin, vmax, levels=levels, cmap=cmap
+                    )
                 
                 units = ""  # We don't have dataset access here
                 self.plot_utils.add_colorbar(im, ax, self.config.variable, units)
@@ -355,11 +371,11 @@ class NetCDFVisualizer:
                             collection.remove()
                         if self.config.designer_mode:
                             new_contour = self.plot_utils.create_designer_contour_plot(
-                                ax, data, lats, lons, vmin, vmax, levels=levels
+                                ax, data, lats, lons, vmin, vmax, levels=levels, cmap=cmap
                             )
                         else:
                             new_contour = self.plot_utils.create_contour_plot(
-                                ax, data, lats, lons, vmin, vmax, levels=levels
+                                ax, data, lats, lons, vmin, vmax, levels=levels, cmap=cmap
                             )
                 
                 # Update title (only if not in designer mode)
@@ -375,9 +391,17 @@ class NetCDFVisualizer:
                 interval=1000//self.config.fps, blit=True, repeat=True
             )
             
-            # Save animation
+            # Save animation: designer mode always uses high-res DPI/bitrate (zoom has no effect on this)
+            if self.config.designer_mode:
+                dpi = DESIGNER_EXPORT_DPI
+                bitrate = DESIGNER_EXPORT_BITRATE
+                print(f"📐 Designer mode: exporting at {dpi} DPI, {bitrate} kbps")
+            else:
+                dpi = DEFAULT_EXPORT_DPI
+                bitrate = DEFAULT_EXPORT_BITRATE
             success = self.plot_utils.save_animation_with_fallback(
-                anim, output_file, self.config.fps, self.ffmpeg_manager
+                anim, output_file, self.config.fps, self.ffmpeg_manager,
+                dpi=dpi, bitrate=bitrate
             )
             
             plt.close(fig)
@@ -453,11 +477,16 @@ class NetCDFVisualizer:
     
     def _get_colorbar_range(self, sample_data: np.ndarray, 
                            global_range: Optional[Tuple[float, float]] = None) -> Tuple[float, float]:
-        """Get colorbar range based on configuration."""
+        """Get colorbar range based on configuration.
+        
+        User-set vmin/vmax take precedence; then global range (if enabled);
+        otherwise per-frame data min/max.
+        """
+        if self.config.vmin is not None and self.config.vmax is not None:
+            return (self.config.vmin, self.config.vmax)
         if global_range and self.config.global_colorbar:
             return global_range
-        else:
-            return np.nanmin(sample_data), np.nanmax(sample_data)
+        return np.nanmin(sample_data), np.nanmax(sample_data)
     
     def _get_animation_dimension(self, ds: xr.Dataset) -> Optional[str]:
         """Find the first dimension that's not spatial (suitable for animation)."""

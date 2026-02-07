@@ -38,6 +38,9 @@ Examples:
   
   # Visualize multiple files as MP4 video
   anc *.nc --variable temperature --format mp4
+  
+  # Visualize using a config file (skips interactive menu)
+  anc *.nc --config viz.yaml
             """
         )
         
@@ -66,26 +69,32 @@ Examples:
                            help='Zoom factor for cropping domain (default: 1.0)')
         
         parser.add_argument('--percentile', type=int, default=5,
-                           help='Percentile threshold for filtering low values (default: 5)')
+                           help='Percentile threshold for filtering low values (default: 0)')
         
         parser.add_argument('--transparent', action='store_true',
                            help='Use transparent background for PNG output')
         
         parser.add_argument('--designer-mode', action='store_true',
                            help='Enable designer mode: clean background, no coordinates, no title')
+        parser.add_argument('--designer-square-crop', action='store_true',
+                           help='[Designer mode] Crop output to a square centered on the map, no padding/margins')
         
         parser.add_argument('--ignore-values', nargs='+', type=float, default=[],
                            help='Values to ignore/mask (e.g., --ignore-values 999 -999)')
         
-        parser.add_argument('--type', choices=['efficient', 'contour', 'heatmap'], 
-                           default='efficient',
-                           help='Plot type (default: efficient)')
+        parser.add_argument('--cmap',
+                           help='Matplotlib colormap name (e.g. viridis, Blues, YlOrRd, RdYlBu_r)')
+        
+        parser.add_argument('--vmin', type=float, default=None,
+                           help='Minimum value for color scale (e.g. 285 for temperature in K)')
+        parser.add_argument('--vmax', type=float, default=None,
+                           help='Maximum value for color scale (e.g. 305 for temperature in K)')
         
         parser.add_argument('--overwrite', action='store_true',
                            help='Overwrite existing output files')
         
-        parser.add_argument('--offline', action='store_true',
-                           help='Skip cartopy map downloads and use minimal map features')
+        parser.add_argument('-c', '--config',
+                           help='Path to config file (JSON or YAML). Loads visualization parameters from file and skips the interactive menu. CLI options override file values.')
         
         return parser
     
@@ -209,8 +218,14 @@ Examples:
             errors.append("Percentile must be between 0 and 100")
         
         # Validate zoom factor
-        if args.zoom <= 0 or args.zoom > 10:
-            errors.append("Zoom factor must be between 0.1 and 10.0")
+        if args.zoom <= 0 or args.zoom > 125:
+            errors.append("Zoom factor must be between 0.1 and 125.0")
+        
+        # Validate vmin/vmax if both provided
+        vmin = getattr(args, 'vmin', None)
+        vmax = getattr(args, 'vmax', None)
+        if vmin is not None and vmax is not None and vmin >= vmax:
+            errors.append("--vmin must be less than --vmax")
         
         # Check if input is required
         if not args.explore and (not args.input or args.input is None):

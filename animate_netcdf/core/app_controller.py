@@ -10,7 +10,7 @@ from typing import Optional
 from argparse import Namespace
 
 from animate_netcdf.core.cli_parser import CLIParser
-from animate_netcdf.core.config_manager import ConfigManager, AnimationConfig, PlotType, OutputFormat
+from animate_netcdf.core.config_manager import ConfigManager, AnimationConfig, OutputFormat, load_config_from_path
 from animate_netcdf.core.explorer import Explorer
 from animate_netcdf.core.interactive_flow import InteractiveFlow
 from animate_netcdf.core.output_manager import OutputManager
@@ -110,11 +110,22 @@ class AppController:
         is_multi_file = CLIParser.is_multi_file_pattern(args.input)
         
         # Get or create configuration
-        config = self._get_or_create_config(args, is_multi_file)
-        if not config:
-            return False
+        config_path = getattr(args, 'config', None)
+        if config_path:
+            try:
+                config = load_config_from_path(config_path)
+            except FileNotFoundError as e:
+                print(f"❌ {e}")
+                return False
+            except ValueError as e:
+                print(f"❌ Invalid config file: {e}")
+                return False
+        else:
+            config = self._get_or_create_config(args, is_multi_file)
+            if not config:
+                return False
         
-        # Set file pattern
+        # Set file pattern (CLI input always defines which NetCDF files to use)
         config.file_pattern = args.input
         
         # Update config from command line arguments
@@ -194,9 +205,9 @@ class AppController:
             # Single file always PNG (not used by visualizer, but set for consistency)
             config.output_format = OutputFormat.MP4  # Visualizer handles single file as PNG
         
-        # Plot type
-        if args.type:
-            config.plot_type = PlotType(args.type)
+        # Colour palette (cmap)
+        if getattr(args, 'cmap', None):
+            config.cmap = args.cmap.strip()
         
         # FPS
         if args.fps != 10:
@@ -217,14 +228,18 @@ class AppController:
         # Designer mode
         if args.designer_mode:
             config.designer_mode = True
+        if getattr(args, 'designer_square_crop', False):
+            config.designer_square_crop = True
         
         # Ignore values
         if args.ignore_values:
             config.ignore_values = args.ignore_values
         
-        # Offline
-        if args.offline:
-            config.offline = True
+        # Color scale range (vmin/vmax)
+        if getattr(args, 'vmin', None) is not None:
+            config.vmin = args.vmin
+        if getattr(args, 'vmax', None) is not None:
+            config.vmax = args.vmax
         
         # Overwrite
         if args.overwrite:

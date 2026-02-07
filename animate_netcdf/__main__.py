@@ -26,19 +26,20 @@ EXAMPLES:
     anc file.nc --variable temp       # Visualize (non-interactive)
     anc *.nc --variable temp --format png  # Multi-file PNG sequence
     anc *.nc --variable temp --format mp4  # Multi-file MP4 video
+    anc *.nc --config viz.yaml        # Visualize using config file (skips interactive menu)
 
 OPTIONS:
+    --config, -c        Path to config file (JSON or YAML). Skips interactive menu; CLI overrides file.
     --variable, -v      Variable name to visualize
     --output, -o        Output filename
     --format            Output format (png or mp4)
     --fps               Frames per second (default: 10)
     --zoom, -z          Zoom factor (default: 1.0)
-    --percentile        Percentile threshold (default: 5)
+    --percentile        Percentile threshold (default: 0)
     --transparent       Use transparent background
     --designer-mode     Clean background, no coordinates
-    --type              Plot type (efficient, contour, heatmap)
+    --designer-square-crop  Square output, no padding (use with --designer-mode)
     --overwrite         Overwrite existing files
-    --offline           Skip cartopy map downloads
 
 For detailed help:
     anc --help

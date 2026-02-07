@@ -50,6 +50,7 @@ setup(
     python_requires=">=3.7",
     install_requires=read_requirements(),
     extras_require={
+        "yaml": ["pyyaml>=5.0"],
         "dev": [
             "pytest>=6.0",
             "pytest-cov>=2.0",

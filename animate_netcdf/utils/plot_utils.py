@@ -84,14 +84,10 @@ class PlotUtils:
             print("⚠️  Cartopy not available for map checking")
     
     @staticmethod
-    def add_cartopy_features(ax, offline: bool = False):
+    def add_cartopy_features(ax):
         """Add cartopy features with download checking and logging."""
         if not CARTOPY_AVAILABLE:
             print("⚠️  Cartopy not available. Cannot add map features.")
-            return
-        
-        if offline:
-            print("🗺️  Offline mode: Skipping cartopy map features")
             return
         
         try:
@@ -175,13 +171,13 @@ class PlotUtils:
         return fig, ax
     
     @staticmethod
-    def setup_geographic_plot(ax, lats: np.ndarray, lons: np.ndarray, offline: bool = False):
+    def setup_geographic_plot(ax, lats: np.ndarray, lons: np.ndarray):
         """Set up geographic plot with features and gridlines."""
         if not CARTOPY_AVAILABLE:
             raise ImportError("Cartopy not available for geographic plots")
         
         # Add Cartopy features
-        PlotUtils.add_cartopy_features(ax, offline=offline)
+        PlotUtils.add_cartopy_features(ax)
         
         # Add gridlines
         gl = ax.gridlines(draw_labels=True, linewidth=0.5, alpha=0.7, 
@@ -258,12 +254,23 @@ class PlotUtils:
                    fontsize=10, style='italic')
     
     @staticmethod
-    def save_animation_with_fallback(anim, output_file: str, fps: int, 
-                                   ffmpeg_manager) -> bool:
-        """Save animation with codec fallback logic."""
+    def save_animation_with_fallback(anim, output_file: str, fps: int,
+                                   ffmpeg_manager, dpi: Optional[int] = None,
+                                   bitrate: Optional[int] = None) -> bool:
+        """Save animation with codec fallback logic.
+        
+        Args:
+            dpi: DPI for frame size (default 72; use 100 for designer/high-res).
+            bitrate: Video bitrate in kbps (default 1000; use 5000 for designer/high-res).
+        """
         if not ffmpeg_manager.is_available():
             print("❌ ffmpeg not available for video creation")
             return False
+        
+        if dpi is None:
+            dpi = 72
+        if bitrate is None:
+            bitrate = 1000
         
         # Get codecs to try
         codecs_to_try = ffmpeg_manager.get_codecs_to_try()
@@ -271,13 +278,13 @@ class PlotUtils:
         saved_successfully = False
         for try_codec in codecs_to_try:
             try:
-                print(f"📹 Trying codec: {try_codec}")
+                print(f"📹 Trying codec: {try_codec} (dpi={dpi}, bitrate={bitrate} kbps)")
                 anim.save(
                     output_file,
                     writer='ffmpeg',
                     fps=fps,
-                    dpi=72,  # Lower DPI for better performance
-                    bitrate=1000,  # Reasonable bitrate
+                    dpi=dpi,
+                    bitrate=bitrate,
                     codec=try_codec
                 )
                 saved_successfully = True
@@ -300,12 +307,20 @@ class PlotUtils:
         return f"{timestamp}_{variable}_{plot_type}_animation.{output_format}"
     
     @staticmethod
-    def create_designer_geographic_plot(plot_type: str = 'efficient', figsize: Tuple[int, int] = (15, 10)):
-        """Create a geographic plot for designer mode with transparent background."""
+    def create_designer_geographic_plot(plot_type: str = 'efficient', figsize: Optional[Tuple[int, int]] = None,
+                                        square_crop: bool = False):
+        """Create a geographic plot for designer mode with transparent background.
+        
+        When square_crop is True, uses a square figure with no margins so the final
+        output is a square centered on the map content.
+        """
         if not CARTOPY_AVAILABLE:
             raise ImportError("Cartopy not available for geographic plots")
         
-        fig, ax = plt.subplots(figsize=figsize, 
+        if figsize is None:
+            figsize = (10, 10) if square_crop else (15, 10)
+        
+        fig, ax = plt.subplots(figsize=figsize,
                               subplot_kw={'projection': ccrs.PlateCarree()})
         
         # Set completely transparent background
@@ -314,31 +329,47 @@ class PlotUtils:
         ax.patch.set_alpha(0.0)
         ax.patch.set_facecolor('none')
         
+        if square_crop:
+            # Remove all padding/margins so the axis fills the figure
+            fig.subplots_adjust(left=0, right=1, bottom=0, top=1, wspace=0, hspace=0)
+        
         return fig, ax
     
     @staticmethod
-    def setup_designer_geographic_plot(ax, lats: np.ndarray, lons: np.ndarray, offline: bool = False):
-        """Set up geographic plot for designer mode: only data and topography."""
+    def setup_designer_geographic_plot(ax, lats: np.ndarray, lons: np.ndarray,
+                                       square_crop: bool = False):
+        """Set up geographic plot for designer mode: only data and topography.
+        
+        When square_crop is True, sets the map extent to a square region centered on
+        the data (crops the longer dimension so the output is a filled square).
+        """
         if not CARTOPY_AVAILABLE:
             raise ImportError("Cartopy not available for geographic plots")
         
         # Add only topography (land/terrain) features - no coastlines, borders, or other decorations
-        if not offline:
-            # Add only land/terrain features for topography
-            ax.add_feature(cfeature.LAND, alpha=0.3, color='lightgray', zorder=0)
-            # Optionally add terrain/elevation if available
-            try:
-                ax.add_feature(cfeature.NaturalEarthFeature('physical', 'land', '50m'), 
-                             alpha=0.2, facecolor='lightgray', zorder=0)
-            except:
-                pass
-        else:
-            # Minimal setup for offline mode
+        ax.add_feature(cfeature.LAND, alpha=0.3, color='lightgray', zorder=0)
+        try:
+            ax.add_feature(cfeature.NaturalEarthFeature('physical', 'land', '50m'),
+                         alpha=0.2, facecolor='lightgray', zorder=0)
+        except Exception:
             pass
         
-        # Set extent without any gridlines or labels
-        ax.set_extent([lons.min(), lons.max(), lats.min(), lats.max()], 
-                     crs=ccrs.PlateCarree())
+        # Set extent: square centered on data when square_crop, else data bounds
+        lon_min, lon_max = float(lons.min()), float(lons.max())
+        lat_min, lat_max = float(lats.min()), float(lats.max())
+        if square_crop:
+            lon_span = lon_max - lon_min
+            lat_span = lat_max - lat_min
+            side = min(lon_span, lat_span)  # crop to square filled with map content
+            center_lon = (lon_min + lon_max) / 2
+            center_lat = (lat_min + lat_max) / 2
+            ax.set_extent(
+                [center_lon - side / 2, center_lon + side / 2,
+                 center_lat - side / 2, center_lat + side / 2],
+                crs=ccrs.PlateCarree()
+            )
+        else:
+            ax.set_extent([lon_min, lon_max, lat_min, lat_max], crs=ccrs.PlateCarree())
         
         # Explicitly remove all gridlines and labels
         gl = ax.gridlines(draw_labels=False, linewidth=0, alpha=0)

@@ -15,15 +15,9 @@ from enum import Enum
 from functools import wraps
 
 
-class PlotType(Enum):
-    """Enumeration for plot types."""
-    EFFICIENT = "efficient"
-    CONTOUR = "contour"
-    HEATMAP = "heatmap"
-
-
 class OutputFormat(Enum):
     """Enumeration for output formats."""
+    PNG = "png"
     MP4 = "mp4"
     AVI = "avi"
     GIF = "gif"
@@ -107,12 +101,12 @@ class AnimationConfig:
     
     # Core animation parameters
     variable: Optional[str] = None
-    plot_type: PlotType = PlotType.EFFICIENT
+    plot_type: str = 'efficient'
     fps: int = 10
     output_pattern: Optional[str] = None
     animate_dim: str = 'time'
     level_index: Optional[int] = None
-    percentile: int = 5
+    percentile: int = 0
     batch_mode: bool = False
     interactive: bool = True
     
@@ -135,16 +129,21 @@ class AnimationConfig:
     zoom_factor: float = 1.0
     
     # Map and visualization settings
-    offline: bool = False
+    cmap: Optional[str] = None  # Matplotlib colormap name (e.g. 'Blues', 'viridis')
     
     # Designer mode settings
     designer_mode: bool = False
+    designer_square_crop: bool = False  # Square output centered on map, no padding
     
     # Output appearance settings
     transparent: bool = False
     
     # Data filtering settings
     ignore_values: List[float] = field(default_factory=list)
+    
+    # Color scale range (optional; if set, overrides data-based min/max)
+    vmin: Optional[float] = None
+    vmax: Optional[float] = None
     
     # Validation errors
     _validation_errors: List[str] = field(default_factory=list, repr=False)
@@ -157,7 +156,7 @@ class AnimationConfig:
         """
         return {
             'variable': self.variable,
-            'plot_type': self.plot_type.value,
+            'plot_type': self.plot_type,
             'fps': self.fps,
             'output_pattern': self.output_pattern,
             'animate_dim': self.animate_dim,
@@ -175,10 +174,13 @@ class AnimationConfig:
             'memory_limit_mb': self.memory_limit_mb,
             'max_files_preview': self.max_files_preview,
             'zoom_factor': self.zoom_factor,
-            'offline': self.offline,
+            'cmap': self.cmap,
             'designer_mode': self.designer_mode,
+            'designer_square_crop': self.designer_square_crop,
             'transparent': self.transparent,
-            'ignore_values': self.ignore_values
+            'ignore_values': self.ignore_values,
+            'vmin': self.vmin,
+            'vmax': self.vmax
         }
     
     def from_dict(self, config_dict: Dict[str, Any]) -> None:
@@ -192,13 +194,9 @@ class AnimationConfig:
         for key, value in config_dict.items():
             if hasattr(self, key):
                 # Handle enum conversions
-                if key == 'plot_type' and isinstance(value, str):
-                    try:
-                        value = PlotType(value)
-                    except ValueError:
-                        self._validation_errors.append(f"Invalid plot_type: {value}. Must be one of {[p.value for p in PlotType]}")
-                        continue
-                
+                if key == 'plot_type':
+                    # Always use efficient; ignore value from file
+                    continue
                 elif key == 'output_format' and isinstance(value, str):
                     try:
                         value = OutputFormat(value)
@@ -206,6 +204,12 @@ class AnimationConfig:
                         self._validation_errors.append(f"Invalid output_format: {value}. Must be one of {[f.value for f in OutputFormat]}")
                         continue
                 
+                elif key == 'cmap':
+                    if value is not None and not isinstance(value, str):
+                        self._validation_errors.append("cmap must be a string or None")
+                        continue
+                    # Accept any string; matplotlib will validate at plot time
+                    pass
                 elif key == 'ignore_values':
                     # Ensure ignore_values is a list of floats
                     if isinstance(value, list):
@@ -222,6 +226,13 @@ class AnimationConfig:
                             value = [float(value)]
                         except (ValueError, TypeError):
                             self._validation_errors.append(f"Invalid ignore_values: {value}. Must be a list of numbers")
+                            continue
+                elif key in ('vmin', 'vmax'):
+                    if value is not None:
+                        try:
+                            value = float(value)
+                        except (ValueError, TypeError):
+                            self._validation_errors.append(f"Invalid {key}: must be a number or None")
                             continue
                 
                 setattr(self, key, value)
@@ -250,8 +261,8 @@ class AnimationConfig:
         # Zoom factor validation
         if self.zoom_factor <= 0:
             errors.append("Zoom factor must be positive")
-        elif self.zoom_factor > 10:
-            errors.append("Zoom factor should not exceed 10 for reasonable performance")
+        elif self.zoom_factor > 125:
+            errors.append("Zoom factor should not exceed 125 for reasonable performance")
         
         # Memory limit validation
         if self.memory_limit_mb <= 0:
@@ -273,6 +284,11 @@ class AnimationConfig:
         # Variable name validation
         if self.variable and not self._validate_variable_name(self.variable):
             errors.append(f"Invalid variable name: {self.variable}")
+        
+        # Color scale range validation (vmin must be < vmax when both set)
+        if self.vmin is not None and self.vmax is not None:
+            if self.vmin >= self.vmax:
+                errors.append("vmin must be less than vmax when both are set")
         
         # Animation dimension validation
         if self.animate_dim and not self._validate_dimension_name(self.animate_dim):
@@ -401,13 +417,60 @@ class AnimationConfig:
             'has_required_fields': len(missing_fields) == 0,
             'validation_errors': errors,
             'missing_fields': missing_fields,
-            'plot_type': self.plot_type.value,
             'output_format': self.output_format.value,
             'variable': self.variable,
             'file_pattern': self.file_pattern,
             'fps': self.fps,
             'zoom_factor': self.zoom_factor
         }
+
+
+def load_config_from_path(path: str) -> AnimationConfig:
+    """Load visualization configuration from a JSON or YAML file.
+
+    Args:
+        path: Path to config file (.json, .yaml, or .yml).
+
+    Returns:
+        AnimationConfig: Configuration populated from the file.
+
+    Raises:
+        FileNotFoundError: If the file does not exist.
+        ValueError: If the format is unsupported, or the file content is invalid.
+    """
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"Config file not found: {path}")
+
+    ext = os.path.splitext(path)[1].lower()
+
+    if ext == '.json':
+        try:
+            with open(path, 'r') as f:
+                data = json.load(f)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Invalid JSON in config file: {e}") from e
+    elif ext in ('.yaml', '.yml'):
+        try:
+            import yaml
+        except ImportError:
+            raise ValueError(
+                "YAML config files require PyYAML. Install with: pip install pyyaml"
+            ) from None
+        try:
+            with open(path, 'r') as f:
+                data = yaml.safe_load(f)
+        except Exception as e:
+            raise ValueError(f"Invalid YAML in config file: {e}") from e
+        if data is None:
+            data = {}
+    else:
+        raise ValueError(
+            f"Unsupported config format: '{ext}'. Use .json, .yaml, or .yml"
+        )
+
+    config = AnimationConfig()
+    config.from_dict(data)
+    return config
 
 
 class ConfigManager:
@@ -469,25 +532,6 @@ class ConfigManager:
             if level_index is not None:
                 self.config.level_index = level_index
         
-        # Plot type selection
-        print(f"\n🎨 Plot types:")
-        print("1. Efficient (fast, imshow with Cartopy) - Recommended")
-        print("2. Contour (detailed with Cartopy)")
-        print("3. Heatmap (simple grid)")
-        
-        while True:
-            try:
-                choice = input("Select plot type (1-3): ").strip()
-                plot_types = [PlotType.EFFICIENT, PlotType.CONTOUR, PlotType.HEATMAP]
-                plot_idx = int(choice) - 1
-                if 0 <= plot_idx < 3:
-                    self.config.plot_type = plot_types[plot_idx]
-                    break
-                else:
-                    print("❌ Please enter a number between 1 and 3")
-            except ValueError:
-                print("❌ Please enter a valid number")
-        
         # FPS selection with validation
         while True:
             try:
@@ -506,7 +550,7 @@ class ConfigManager:
         # Output settings
         # Generate default output with timestamp for multi-file mode
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        default_output = f"{timestamp}_{self.config.variable}_{self.config.plot_type.value}_multifile.{self.config.output_format.value}"
+        default_output = f"{timestamp}_{self.config.variable}_multifile.{self.config.output_format.value}"
         output_file = input(f"\nOutput filename (default: {default_output}): ").strip()
         if output_file:
             self.config.output_pattern = output_file
@@ -541,6 +585,32 @@ class ConfigManager:
         if pre_scan in ['n', 'no']:
             self.config.pre_scan_files = False
         
+        # Fixed color scale range (vmin, vmax)
+        print(f"\n📐 Color scale range: set fixed min/max (e.g. 285,305 for temperature in K)")
+        print("   Leave empty to use data-based range.")
+        while True:
+            try:
+                range_input = input("Enter min,max (e.g. 285,305) or press Enter for data range: ").strip()
+                if not range_input:
+                    self.config.vmin = None
+                    self.config.vmax = None
+                    break
+                parts = [p.strip() for p in range_input.replace(',', ' ').split()]
+                if len(parts) == 2:
+                    vmin_val = float(parts[0])
+                    vmax_val = float(parts[1])
+                    if vmin_val < vmax_val:
+                        self.config.vmin = vmin_val
+                        self.config.vmax = vmax_val
+                        print(f"✅ Color scale: {self.config.vmin} to {self.config.vmax}")
+                        break
+                    else:
+                        print("❌ Min must be less than max")
+                else:
+                    print("❌ Enter two numbers separated by comma (e.g. 285,305)")
+            except ValueError:
+                print("❌ Invalid input. Enter two numbers (e.g. 285,305)")
+        
         # Zoom factor with validation
         while True:
             try:
@@ -548,11 +618,11 @@ class ConfigManager:
                 if not zoom_input:
                     break
                 zoom_factor = float(zoom_input)
-                if 0.1 <= zoom_factor <= 10.0:
+                if 0.1 <= zoom_factor <= 125.0:
                     self.config.zoom_factor = zoom_factor
                     break
                 else:
-                    print("❌ Zoom factor must be between 0.1 and 10.0")
+                    print("❌ Zoom factor must be between 0.1 and 125.0")
             except ValueError:
                 print("❌ Please enter a valid number")
         
@@ -782,7 +852,6 @@ class ConfigManager:
         if self.loaded:
             summary.update({
                 'variable': self.config.variable,
-                'plot_type': self.config.plot_type.value,
                 'fps': self.config.fps,
                 'file_pattern': self.config.file_pattern,
                 'output_pattern': self.config.output_pattern
@@ -817,7 +886,6 @@ class ConfigManager:
         if summary['loaded'] and summary['valid']:
             print(f"\n📊 Configuration Details:")
             print(f"  Variable: {summary.get('variable', 'Not set')}")
-            print(f"  Plot type: {summary.get('plot_type', 'Not set')}")
             print(f"  FPS: {summary.get('fps', 'Not set')}")
             print(f"  File pattern: {summary.get('file_pattern', 'Not set')}")
             print(f"  Output pattern: {summary.get('output_pattern', 'Not set')}")
