@@ -10,7 +10,7 @@ This package provides functionality for:
 - File discovery and validation
 """
 
-__version__ = "1.7.5"
+__version__ = "1.7.6"
 __author__ = "Florian Cochard"
 __email__ = "florian@weatherwise.fr"
 
