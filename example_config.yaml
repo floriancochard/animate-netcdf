@@ -8,6 +8,9 @@ variable: temperature
 output_format: mp4 # png | mp4
 fps: 10
 zoom_factor: 1.0
+# Optional: center zoom on (lat, lon); omit or set null to use domain center
+# zoom_center_lat: 45.5
+# zoom_center_lon: -122.6
 percentile: 0
 # Colormap: use a matplotlib name from colour_palettes (e.g. RdYlBu_r, coolwarm, viridis, Blues, YlOrRd)
 cmap: RdYlBu_r
@@ -16,6 +19,7 @@ vmin: null
 vmax: null
 designer_mode: false
 designer_square_crop: false
+designer_show_map_contours: false
 transparent: false
 ignore_values: []
 overwrite_existing: false

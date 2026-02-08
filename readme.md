@@ -40,7 +40,7 @@ You can store visualization parameters in a JSON or YAML file and pass it with `
 - **JSON**: supported by default (see `example_config.json`).
 - **YAML**: supported if PyYAML is installed: `pip install pyyaml` or `pip install animate-netcdf[yaml]` (see `example_config.yaml`).
 
-Config keys match the CLI and interactive options (e.g. `variable`, `output_format`, `fps`, `zoom_factor`, `cmap`, `vmin`, `vmax`, `designer_mode`, `transparent`, `ignore_values`). The NetCDF file or pattern is always given on the command line: `anc *.nc --config viz.yaml`.
+Config keys match the CLI and interactive options (e.g. `variable`, `output_format`, `fps`, `zoom_factor`, `zoom_center_lat`, `zoom_center_lon`, `cmap`, `vmin`, `vmax`, `designer_mode`, `designer_show_map_contours`, `transparent`, `ignore_values`). The NetCDF file or pattern is always given on the command line: `anc *.nc --config viz.yaml`.
 
 ## ✅ Key Features
 
@@ -48,17 +48,19 @@ Config keys match the CLI and interactive options (e.g. `variable`, `output_form
 - **Smart Dimension Handling**: Auto-detects animation dimension (time, level, etc.)
 - **Efficient plotting**: Fast imshow with Cartopy
 - **Configuration Management**: Interactive setup and JSON-based configuration
-- **Zoom Functionality**: Crop domain by specified zoom factor
+- **Zoom Functionality**: Crop domain by specified zoom factor; optionally center on a latitude/longitude
 
 ## 🔧 Command Line Options
 
-| Option           | Description                                                 | Default        |
-| ---------------- | ----------------------------------------------------------- | -------------- |
-| `--variable`     | Variable name to animate                                    | Required       |
-| `--fps`          | Frames per second                                           | `10`           |
-| `--output`       | Output filename                                             | Auto-generated |
-| `--config`, `-c` | Load config from JSON or YAML file (skips interactive menu) | None           |
-| `--zoom`         | Zoom factor for cropping domain                             | 1.0            |
+| Option           | Description                                                          | Default        |
+| ---------------- | -------------------------------------------------------------------- | -------------- |
+| `--variable`     | Variable name to animate                                             | Required       |
+| `--fps`          | Frames per second                                                    | `10`           |
+| `--output`       | Output filename                                                      | Auto-generated |
+| `--config`, `-c` | Load config from JSON or YAML file (skips interactive menu)          | None           |
+| `--zoom`, `-z`   | Zoom factor for cropping domain                                      | 1.0            |
+| `--zoom-lat`     | Latitude to center zoom on (use with `--zoom-lon` and `--zoom` > 1)  | None           |
+| `--zoom-lon`     | Longitude to center zoom on (use with `--zoom-lat` and `--zoom` > 1) | None           |
 
 ## 🧪 Testing
 

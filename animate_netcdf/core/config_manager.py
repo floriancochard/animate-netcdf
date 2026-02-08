@@ -127,6 +127,8 @@ class AnimationConfig:
     
     # Zoom settings
     zoom_factor: float = 1.0
+    zoom_center_lat: Optional[float] = None  # Latitude to center zoom on (with zoom_center_lon)
+    zoom_center_lon: Optional[float] = None  # Longitude to center zoom on (with zoom_center_lat)
     
     # Map and visualization settings
     cmap: Optional[str] = None  # Matplotlib colormap name (e.g. 'Blues', 'viridis')
@@ -134,6 +136,7 @@ class AnimationConfig:
     # Designer mode settings
     designer_mode: bool = False
     designer_square_crop: bool = False  # Square output centered on map, no padding
+    designer_show_map_contours: bool = False  # Show coastlines/borders in designer mode
     
     # Output appearance settings
     transparent: bool = False
@@ -174,9 +177,12 @@ class AnimationConfig:
             'memory_limit_mb': self.memory_limit_mb,
             'max_files_preview': self.max_files_preview,
             'zoom_factor': self.zoom_factor,
+            'zoom_center_lat': self.zoom_center_lat,
+            'zoom_center_lon': self.zoom_center_lon,
             'cmap': self.cmap,
             'designer_mode': self.designer_mode,
             'designer_square_crop': self.designer_square_crop,
+            'designer_show_map_contours': self.designer_show_map_contours,
             'transparent': self.transparent,
             'ignore_values': self.ignore_values,
             'vmin': self.vmin,
@@ -227,7 +233,7 @@ class AnimationConfig:
                         except (ValueError, TypeError):
                             self._validation_errors.append(f"Invalid ignore_values: {value}. Must be a list of numbers")
                             continue
-                elif key in ('vmin', 'vmax'):
+                elif key in ('vmin', 'vmax', 'zoom_center_lat', 'zoom_center_lon'):
                     if value is not None:
                         try:
                             value = float(value)
@@ -263,6 +269,16 @@ class AnimationConfig:
             errors.append("Zoom factor must be positive")
         elif self.zoom_factor > 125:
             errors.append("Zoom factor should not exceed 125 for reasonable performance")
+        
+        # Zoom center validation (both must be set together; lat in [-90,90], lon in [-180,360])
+        if self.zoom_center_lat is not None or self.zoom_center_lon is not None:
+            if self.zoom_center_lat is None or self.zoom_center_lon is None:
+                errors.append("Zoom center requires both zoom_center_lat and zoom_center_lon")
+            else:
+                if not -90 <= self.zoom_center_lat <= 90:
+                    errors.append("zoom_center_lat must be between -90 and 90")
+                if not -180 <= self.zoom_center_lon <= 360:
+                    errors.append("zoom_center_lon must be between -180 and 360")
         
         # Memory limit validation
         if self.memory_limit_mb <= 0:
@@ -421,7 +437,9 @@ class AnimationConfig:
             'variable': self.variable,
             'file_pattern': self.file_pattern,
             'fps': self.fps,
-            'zoom_factor': self.zoom_factor
+            'zoom_factor': self.zoom_factor,
+            'zoom_center_lat': self.zoom_center_lat,
+            'zoom_center_lon': self.zoom_center_lon
         }
 
 
@@ -625,6 +643,29 @@ class ConfigManager:
                     print("❌ Zoom factor must be between 0.1 and 125.0")
             except ValueError:
                 print("❌ Please enter a valid number")
+        
+        # Zoom center (optional; only used when zoom factor > 1)
+        if self.config.zoom_factor > 1.0:
+            center_input = input("Zoom center as lat,lon (e.g. 45.5,-122.6, or Enter for domain center): ").strip()
+            if center_input:
+                try:
+                    parts = [p.strip() for p in center_input.replace(',', ' ').split()]
+                    if len(parts) == 2:
+                        lat_val = float(parts[0])
+                        lon_val = float(parts[1])
+                        if -90 <= lat_val <= 90 and -180 <= lon_val <= 360:
+                            self.config.zoom_center_lat = lat_val
+                            self.config.zoom_center_lon = lon_val
+                            print(f"✅ Zoom center: lat={lat_val}, lon={lon_val}")
+                        else:
+                            print("❌ Lat must be in [-90,90], lon in [-180,360]. Using domain center.")
+                    else:
+                        print("❌ Enter two numbers: lat,lon (e.g. 45.5,-122.6)")
+                except ValueError:
+                    print("❌ Invalid input. Using domain center.")
+            else:
+                self.config.zoom_center_lat = None
+                self.config.zoom_center_lon = None
         
         # Ignore values
         print(f"\n🔍 Some NetCDF files use placeholder values (e.g., 999, -999) for missing data.")

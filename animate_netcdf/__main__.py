@@ -35,10 +35,13 @@ OPTIONS:
     --format            Output format (png or mp4)
     --fps               Frames per second (default: 10)
     --zoom, -z          Zoom factor (default: 1.0)
+    --zoom-lat          Latitude to center zoom on (with --zoom-lon)
+    --zoom-lon          Longitude to center zoom on (with --zoom-lat)
     --percentile        Percentile threshold (default: 0)
     --transparent       Use transparent background
     --designer-mode     Clean background, no coordinates
     --designer-square-crop  Square output, no padding (use with --designer-mode)
+    --designer-show-map-contours  Show map contours/coastlines (use with --designer-mode)
     --overwrite         Overwrite existing files
 
 For detailed help:

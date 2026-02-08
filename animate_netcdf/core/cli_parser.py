@@ -67,6 +67,10 @@ Examples:
         
         parser.add_argument('--zoom', '-z', type=float, default=1.0,
                            help='Zoom factor for cropping domain (default: 1.0)')
+        parser.add_argument('--zoom-lat', type=float, default=None,
+                           help='Latitude to center zoom on (use with --zoom-lon and --zoom > 1)')
+        parser.add_argument('--zoom-lon', type=float, default=None,
+                           help='Longitude to center zoom on (use with --zoom-lat and --zoom > 1)')
         
         parser.add_argument('--percentile', type=int, default=5,
                            help='Percentile threshold for filtering low values (default: 0)')
@@ -78,6 +82,8 @@ Examples:
                            help='Enable designer mode: clean background, no coordinates, no title')
         parser.add_argument('--designer-square-crop', action='store_true',
                            help='[Designer mode] Crop output to a square centered on the map, no padding/margins')
+        parser.add_argument('--designer-show-map-contours', action='store_true',
+                           help='[Designer mode] Show map contours (coastlines and borders)')
         
         parser.add_argument('--ignore-values', nargs='+', type=float, default=[],
                            help='Values to ignore/mask (e.g., --ignore-values 999 -999)')
@@ -220,6 +226,18 @@ Examples:
         # Validate zoom factor
         if args.zoom <= 0 or args.zoom > 125:
             errors.append("Zoom factor must be between 0.1 and 125.0")
+        
+        # Validate zoom center (both or neither; lat in [-90,90], lon in [-180,360])
+        zoom_lat = getattr(args, 'zoom_lat', None)
+        zoom_lon = getattr(args, 'zoom_lon', None)
+        if zoom_lat is not None or zoom_lon is not None:
+            if zoom_lat is None or zoom_lon is None:
+                errors.append("Zoom center requires both --zoom-lat and --zoom-lon")
+            else:
+                if not -90 <= zoom_lat <= 90:
+                    errors.append("--zoom-lat must be between -90 and 90")
+                if not -180 <= zoom_lon <= 360:
+                    errors.append("--zoom-lon must be between -180 and 360")
         
         # Validate vmin/vmax if both provided
         vmin = getattr(args, 'vmin', None)

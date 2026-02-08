@@ -77,6 +77,10 @@ class InteractiveFlow:
         # Step 6: Zoom factor
         zoom = self._get_zoom_factor()
         config.zoom_factor = zoom
+        # Step 6b: Zoom center (always prompt; used when zoom > 1)
+        center_lat, center_lon = self._get_zoom_center()
+        config.zoom_center_lat = center_lat
+        config.zoom_center_lon = center_lon
         
         # Step 7: Percentile filtering
         percentile = self._get_percentile()
@@ -96,6 +100,7 @@ class InteractiveFlow:
         config.designer_mode = designer_mode
         if designer_mode:
             config.designer_square_crop = self._get_designer_square_crop()
+            config.designer_show_map_contours = self._get_designer_show_map_contours()
         
         # Step 11: Transparent background (for PNG)
         if not is_multi_file or (is_multi_file and config.output_format.value == 'png'):
@@ -301,6 +306,81 @@ class InteractiveFlow:
             except KeyboardInterrupt:
                 print("\n⚠️  Operation cancelled")
                 return 1.0
+
+    def _get_zoom_and_center(self) -> Tuple[float, Optional[float], Optional[float]]:
+        """Get zoom factor then zoom center (lat, lon) in one step. Returns (zoom, center_lat, center_lon)."""
+        print("\n🔍 Step 6: Zoom")
+        print("-" * 40)
+        
+        while True:
+            try:
+                zoom_input = input("Zoom factor (default: 1.0, no zoom): ").strip()
+                if not zoom_input:
+                    zoom_factor = 1.0
+                else:
+                    zoom_factor = float(zoom_input)
+                    if zoom_factor <= 0 or zoom_factor > 125:
+                        print("❌ Zoom factor must be between 0.1 and 125.0. Using default: 1.0")
+                        zoom_factor = 1.0
+                print(f"✅ Zoom factor: {zoom_factor}")
+                break
+            except ValueError:
+                print("❌ Invalid zoom factor. Using default: 1.0")
+                zoom_factor = 1.0
+                break
+            except KeyboardInterrupt:
+                raise
+
+        # Always ask for zoom center (used when zoom > 1)
+        print("\n📍 Zoom center (latitude, longitude)")
+        print("   Only used when zoom > 1. Press Enter for domain center, or enter lat,lon (e.g. 45.5,-122.6)")
+        while True:
+            try:
+                center_input = input("Zoom center (lat,lon or Enter): ").strip()
+                if not center_input:
+                    print("✅ Using domain center")
+                    return zoom_factor, None, None
+                parts = [p.strip() for p in center_input.replace(',', ' ').split()]
+                if len(parts) == 2:
+                    lat_val = float(parts[0])
+                    lon_val = float(parts[1])
+                    if -90 <= lat_val <= 90 and -180 <= lon_val <= 360:
+                        print(f"✅ Zoom center: lat={lat_val}, lon={lon_val}")
+                        return zoom_factor, lat_val, lon_val
+                    print("❌ Lat must be in [-90,90], lon in [-180,360]")
+                else:
+                    print("❌ Enter two numbers: lat,lon (e.g. 45.5,-122.6)")
+            except ValueError:
+                print("❌ Invalid input")
+            except KeyboardInterrupt:
+                print("\n⚠️  Operation cancelled")
+                return zoom_factor, None, None
+    
+    def _get_zoom_center(self) -> Tuple[Optional[float], Optional[float]]:
+        """Get optional zoom center (lat, lon) from user. Returns (None, None) for domain center."""
+        print("\n📍 Step 6b: Zoom center (latitude, longitude)")
+        print("   Only used when zoom factor > 1. Press Enter for domain center, or enter lat,lon (e.g. 45.5,-122.6)")
+        while True:
+            try:
+                center_input = input("Zoom center (lat,lon or Enter): ").strip()
+                if not center_input:
+                    print("✅ Using domain center")
+                    return None, None
+                parts = [p.strip() for p in center_input.replace(',', ' ').split()]
+                if len(parts) == 2:
+                    lat_val = float(parts[0])
+                    lon_val = float(parts[1])
+                    if -90 <= lat_val <= 90 and -180 <= lon_val <= 360:
+                        print(f"✅ Zoom center: lat={lat_val}, lon={lon_val}")
+                        return lat_val, lon_val
+                    print("❌ Lat must be in [-90,90], lon in [-180,360]")
+                else:
+                    print("❌ Enter two numbers: lat,lon (e.g. 45.5,-122.6)")
+            except ValueError:
+                print("❌ Invalid input")
+            except KeyboardInterrupt:
+                print("\n⚠️  Operation cancelled")
+                return None, None
     
     def _get_percentile(self) -> int:
         """Get percentile threshold from user."""
@@ -406,6 +486,25 @@ class InteractiveFlow:
         while True:
             try:
                 choice = input("Use square crop? (y/n, default: n): ").strip().lower()
+                if not choice or choice == 'n':
+                    return False
+                elif choice == 'y':
+                    return True
+                else:
+                    print("❌ Please enter 'y' or 'n'")
+            except KeyboardInterrupt:
+                print("\n⚠️  Operation cancelled")
+                return False
+
+    def _get_designer_show_map_contours(self) -> bool:
+        """Get designer preference for showing map contours (coastlines/borders)."""
+        print("\n🗺️  Map contours (designer mode)")
+        print("-" * 40)
+        print("Map contours: show coastlines and borders on the map")
+        
+        while True:
+            try:
+                choice = input("Show map contours? (y/n, default: n): ").strip().lower()
                 if not choice or choice == 'n':
                     return False
                 elif choice == 'y':

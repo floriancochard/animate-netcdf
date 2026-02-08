@@ -337,11 +337,13 @@ class PlotUtils:
     
     @staticmethod
     def setup_designer_geographic_plot(ax, lats: np.ndarray, lons: np.ndarray,
-                                       square_crop: bool = False):
+                                       square_crop: bool = False,
+                                       show_map_contours: bool = False):
         """Set up geographic plot for designer mode: only data and topography.
         
         When square_crop is True, sets the map extent to a square region centered on
         the data (crops the longer dimension so the output is a filled square).
+        When show_map_contours is True, adds coastlines and borders (map contours).
         """
         if not CARTOPY_AVAILABLE:
             raise ImportError("Cartopy not available for geographic plots")
@@ -353,6 +355,9 @@ class PlotUtils:
                          alpha=0.2, facecolor='lightgray', zorder=0)
         except Exception:
             pass
+        
+        if show_map_contours:
+            PlotUtils.add_cartopy_features(ax)
         
         # Set extent: square centered on data when square_crop, else data bounds
         lon_min, lon_max = float(lons.min()), float(lons.max())

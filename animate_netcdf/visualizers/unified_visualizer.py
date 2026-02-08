@@ -162,7 +162,8 @@ class NetCDFVisualizer:
             # Prepare data for first time step
             data, lats, lons = self.data_processor.prepare_data_for_plotting(
                 variable, time_step=0, animate_dim=animate_dim,
-                level_index=self.config.level_index, zoom_factor=self.config.zoom_factor
+                level_index=self.config.level_index, zoom_factor=self.config.zoom_factor,
+                zoom_center_lat=self.config.zoom_center_lat, zoom_center_lon=self.config.zoom_center_lon
             )
             
             # Apply filters
@@ -173,11 +174,13 @@ class NetCDFVisualizer:
                 # Use designer-specific functions if in designer mode
                 if self.config.designer_mode:
                     square_crop = getattr(self.config, 'designer_square_crop', False)
+                    show_map_contours = getattr(self.config, 'designer_show_map_contours', False)
                     fig, ax = self.plot_utils.create_designer_geographic_plot(
                         plot_type, square_crop=square_crop
                     )
                     self.plot_utils.setup_designer_geographic_plot(
-                        ax, lats, lons, square_crop=square_crop
+                        ax, lats, lons, square_crop=square_crop,
+                        show_map_contours=show_map_contours
                     )
                     
                     if plot_type == 'efficient':
@@ -303,6 +306,7 @@ class NetCDFVisualizer:
             # Use designer-specific functions if in designer mode
             square_crop = getattr(self.config, 'designer_square_crop', False)
             if self.config.designer_mode:
+                show_map_contours = getattr(self.config, 'designer_show_map_contours', False)
                 fig, ax = self.plot_utils.create_designer_geographic_plot(
                     plot_type, square_crop=square_crop
                 )
@@ -318,13 +322,15 @@ class NetCDFVisualizer:
                 data, lats, lons = self.data_processor.prepare_data_for_plotting(
                     data_array, time_step=0, animate_dim='time',
                     level_index=self.config.level_index, zoom_factor=self.config.zoom_factor,
+                    zoom_center_lat=self.config.zoom_center_lat, zoom_center_lon=self.config.zoom_center_lon,
                     verbose=False
                 )
             initial_data = self._apply_filters(data)
             
             if self.config.designer_mode:
                 self.plot_utils.setup_designer_geographic_plot(
-                    ax, lats, lons, square_crop=square_crop
+                    ax, lats, lons, square_crop=square_crop,
+                    show_map_contours=show_map_contours
                 )
             else:
                 self.plot_utils.setup_geographic_plot(ax, lats, lons)
@@ -430,6 +436,7 @@ class NetCDFVisualizer:
                 data, _, _ = self.data_processor.prepare_data_for_plotting(
                     data_array, time_step=0, animate_dim='time',
                     level_index=self.config.level_index, zoom_factor=self.config.zoom_factor,
+                    zoom_center_lat=self.config.zoom_center_lat, zoom_center_lon=self.config.zoom_center_lon,
                     verbose=False
                 )
                 

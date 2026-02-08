@@ -72,11 +72,13 @@ class DataProcessor:
         return filtered_data
     
     @staticmethod
-    def prepare_data_for_plotting(data_array: xr.DataArray, 
-                                 time_step: int = 0, 
+    def prepare_data_for_plotting(data_array: xr.DataArray,
+                                 time_step: int = 0,
                                  animate_dim: str = 'time',
                                  level_index: Optional[int] = None,
                                  zoom_factor: float = 1.0,
+                                 zoom_center_lat: Optional[float] = None,
+                                 zoom_center_lon: Optional[float] = None,
                                  verbose: bool = True) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Prepare data for plotting by handling extra dimensions and zooming."""
         
@@ -142,7 +144,10 @@ class DataProcessor:
         
         # Apply zoom factor if specified
         if zoom_factor != 1.0:
-            data, lats, lons = DataProcessor._apply_zoom(data, lats, lons, zoom_factor)
+            data, lats, lons = DataProcessor._apply_zoom(
+                data, lats, lons, zoom_factor,
+                center_lat=zoom_center_lat, center_lon=zoom_center_lon
+            )
         
         return data, lats, lons
     
@@ -223,9 +228,11 @@ class DataProcessor:
         return lats, lons
     
     @staticmethod
-    def _apply_zoom(data: np.ndarray, lats: np.ndarray, lons: np.ndarray, 
-                    zoom_factor: float) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Apply zoom factor to crop the domain."""
+    def _apply_zoom(data: np.ndarray, lats: np.ndarray, lons: np.ndarray,
+                    zoom_factor: float,
+                    center_lat: Optional[float] = None,
+                    center_lon: Optional[float] = None) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Apply zoom factor to crop the domain, optionally centered on (latitude, longitude)."""
         if zoom_factor <= 0:
             raise ValueError("Zoom factor must be positive")
         
@@ -238,19 +245,52 @@ class DataProcessor:
         # For zoom_factor > 1, we crop the domain
         # For zoom_factor < 1, we expand the domain (not typically useful)
         if zoom_factor > 1.0:
-            # Calculate new dimensions (crop)
+            # Calculate new dimensions (crop); keep square so X and Y domain extent match
             new_height = int(original_height / zoom_factor)
             new_width = int(original_width / zoom_factor)
-            
-            # Calculate crop boundaries (center the crop)
-            start_row = (original_height - new_height) // 2
-            end_row = start_row + new_height
-            start_col = (original_width - new_width) // 2
-            end_col = start_col + new_width
+            crop_side = min(new_height, new_width)
+            new_height = crop_side
+            new_width = crop_side
+
+            # Resolve center: use (center_lat, center_lon) if both provided, else grid center
+            if center_lat is not None and center_lon is not None:
+                # Normalize user longitude to grid range (grid may be 0-360 or -180-180)
+                lon_grid_min = float(np.min(lons))
+                lon_grid_max = float(np.max(lons))
+                center_lon_norm = center_lon
+                if lon_grid_min >= 0 and lon_grid_max > 180 and center_lon < 0:
+                    # Grid is 0-360, user gave -180..0 (e.g. -82.6 for 82.6W) -> use 0-360
+                    center_lon_norm = center_lon + 360.0
+                elif lon_grid_min < 0 and center_lon > 180:
+                    # Grid is -180..180, user gave 180..360 -> use -180..180
+                    center_lon_norm = center_lon - 360.0
+                if len(lats.shape) == 2 and len(lons.shape) == 2:
+                    # 2D coordinates: find (row, col) with minimum distance to (center_lat, center_lon)
+                    dist_sq = (lats - center_lat) ** 2 + (lons - center_lon_norm) ** 2
+                    center_row, center_col = np.unravel_index(np.argmin(dist_sq), lats.shape)
+                else:
+                    # 1D coordinates
+                    center_row = int(np.argmin(np.abs(lats - center_lat)))
+                    center_col = int(np.argmin(np.abs(lons - center_lon_norm)))
+                # Crop centered on that cell, clamped to valid range
+                start_row = max(0, center_row - new_height // 2)
+                end_row = min(original_height, start_row + new_height)
+                start_row = max(0, end_row - new_height)
+                start_col = max(0, center_col - new_width // 2)
+                end_col = min(original_width, start_col + new_width)
+                start_col = max(0, end_col - new_width)
+            else:
+                # Default: center the crop on the grid
+                start_row = (original_height - new_height) // 2
+                end_row = start_row + new_height
+                start_col = (original_width - new_width) // 2
+                end_col = start_col + new_width
             
             # Only print zoom info once per animation
             if not hasattr(DataProcessor, '_zoom_applied'):
                 print(f"🔍 Applying zoom factor {zoom_factor:.2f}")
+                if center_lat is not None and center_lon is not None:
+                    print(f"   Zoom center: lat={center_lat}, lon={center_lon}")
                 print(f"   Original size: {original_width} x {original_height}")
                 print(f"   Cropped size: {new_width} x {new_height}")
                 print(f"   Crop boundaries: rows {start_row}:{end_row}, cols {start_col}:{end_col}")

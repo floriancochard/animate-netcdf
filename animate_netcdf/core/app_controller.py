@@ -216,6 +216,9 @@ class AppController:
         # Zoom
         if args.zoom != 1.0:
             config.zoom_factor = args.zoom
+        if getattr(args, 'zoom_lat', None) is not None and getattr(args, 'zoom_lon', None) is not None:
+            config.zoom_center_lat = args.zoom_lat
+            config.zoom_center_lon = args.zoom_lon
         
         # Percentile
         if args.percentile != 5:
@@ -230,6 +233,8 @@ class AppController:
             config.designer_mode = True
         if getattr(args, 'designer_square_crop', False):
             config.designer_square_crop = True
+        if getattr(args, 'designer_show_map_contours', False):
+            config.designer_show_map_contours = True
         
         # Ignore values
         if args.ignore_values:
