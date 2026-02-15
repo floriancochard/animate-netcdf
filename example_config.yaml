@@ -17,8 +17,22 @@ cmap: RdYlBu_r
 # Optional fixed color scale (leave null for data-based range)
 vmin: null
 vmax: null
+# Map cues: land/sea fill (coasts clear when zoomed); optional city labels
+show_land_sea: true
+show_place_names: false
+# Map palette (land/sea colours and patterns; omit or set null to use defaults)
+# Stronger colours: map_land_color: "#b0b0b0", map_ocean_color: "#7eb8da"
+# Land pattern (diagonal lines) helps differentiate land from sea under data:
+# map_land_hatch: "///"
+# map_land_alpha: 0.5
+# map_ocean_alpha: 0.45
+# Data layer opacity (0–1); 1 = fully opaque (use if data looks too transparent)
+# data_alpha: 1.0
+# Land/sea resolution: 110m (coarse), 50m (default, matches coastlines), 10m (fine)
+# map_land_sea_scale: 50m
 designer_mode: false
 designer_square_crop: false
+# designer_full_domain: true  # Use full NetCDF domain as rectangle (no zoom)
 designer_show_map_contours: false
 transparent: false
 ignore_values: []

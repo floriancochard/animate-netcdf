@@ -59,8 +59,8 @@ Examples:
         parser.add_argument('--output', '-o',
                            help='Output filename or pattern')
         
-        parser.add_argument('--format', choices=['png', 'mp4'], default=None,
-                           help='Output format (png for sequence, mp4 for video). Auto-detected if not specified.')
+        parser.add_argument('--format', choices=['png', 'mp4', 'gif'], default=None,
+                           help='Output format (png for sequence, mp4 for video, gif for animated GIF). Auto-detected if not specified.')
         
         parser.add_argument('--fps', type=int, default=10,
                            help='Frames per second for animations (default: 10)')
@@ -82,8 +82,17 @@ Examples:
                            help='Enable designer mode: clean background, no coordinates, no title')
         parser.add_argument('--designer-square-crop', action='store_true',
                            help='[Designer mode] Crop output to a square centered on the map, no padding/margins')
+        parser.add_argument('--designer-full-domain', action='store_true',
+                           help='[Designer mode] Use full NetCDF domain as rectangle (no zoom; whole file extent)')
         parser.add_argument('--designer-show-map-contours', action='store_true',
                            help='[Designer mode] Show map contours (coastlines and borders)')
+        
+        parser.add_argument('--no-land-sea', action='store_true',
+                           help='Disable land/ocean fill (coasts less visible when zoomed)')
+        parser.add_argument('--map-land-sea-scale', type=str, choices=['110m', '50m', '10m'], default=None,
+                           help='Land/sea resolution: 110m (coarse), 50m (default), 10m (fine)')
+        parser.add_argument('--show-place-names', action='store_true',
+                           help='Add minimal city labels for orientation when zoomed')
         
         parser.add_argument('--ignore-values', nargs='+', type=float, default=[],
                            help='Values to ignore/mask (e.g., --ignore-values 999 -999)')
@@ -95,6 +104,8 @@ Examples:
                            help='Minimum value for color scale (e.g. 285 for temperature in K)')
         parser.add_argument('--vmax', type=float, default=None,
                            help='Maximum value for color scale (e.g. 305 for temperature in K)')
+        parser.add_argument('--data-alpha', type=float, default=None,
+                           help='Data layer opacity 0–1 (e.g. 1.0 = fully opaque; use if data looks too transparent)')
         
         parser.add_argument('--overwrite', action='store_true',
                            help='Overwrite existing output files')

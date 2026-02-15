@@ -26,13 +26,14 @@ EXAMPLES:
     anc file.nc --variable temp       # Visualize (non-interactive)
     anc *.nc --variable temp --format png  # Multi-file PNG sequence
     anc *.nc --variable temp --format mp4  # Multi-file MP4 video
+    anc *.nc --variable temp --format gif  # Multi-file GIF animation
     anc *.nc --config viz.yaml        # Visualize using config file (skips interactive menu)
 
 OPTIONS:
     --config, -c        Path to config file (JSON or YAML). Skips interactive menu; CLI overrides file.
     --variable, -v      Variable name to visualize
     --output, -o        Output filename
-    --format            Output format (png or mp4)
+    --format            Output format (png, mp4, or gif)
     --fps               Frames per second (default: 10)
     --zoom, -z          Zoom factor (default: 1.0)
     --zoom-lat          Latitude to center zoom on (with --zoom-lon)
@@ -41,6 +42,7 @@ OPTIONS:
     --transparent       Use transparent background
     --designer-mode     Clean background, no coordinates
     --designer-square-crop  Square output, no padding (use with --designer-mode)
+    --designer-full-domain  Full NetCDF domain as rectangle (use with --designer-mode)
     --designer-show-map-contours  Show map contours/coastlines (use with --designer-mode)
     --overwrite         Overwrite existing files
 

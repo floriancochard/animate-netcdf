@@ -19,10 +19,10 @@ class OutputManager:
         
         Args:
             input_type: 'single' or 'multi'
-            user_choice: User-specified format ('png' or 'mp4') or None
+            user_choice: User-specified format ('png', 'mp4', or 'gif') or None
             
         Returns:
-            str: Output format ('png' or 'mp4')
+            str: Output format ('png', 'mp4', or 'gif')
         """
         if user_choice:
             return user_choice.lower()
@@ -41,7 +41,7 @@ class OutputManager:
         
         Args:
             variable: Variable name
-            format: Output format ('png' or 'mp4')
+            format: Output format ('png', 'mp4', or 'gif')
             user_specified: User-specified filename or None
             is_multi_file: Whether this is multi-file output
             
@@ -56,9 +56,9 @@ class OutputManager:
                     return user_specified[:-4]
                 return user_specified
             else:
-                # For single file or MP4, ensure correct extension
+                # For single file, MP4, or GIF, ensure correct extension
                 if not user_specified.endswith(f'.{format}'):
-                    if user_specified.endswith('.png') or user_specified.endswith('.mp4'):
+                    if user_specified.endswith(('.png', '.mp4', '.gif')):
                         # Replace existing extension
                         base = os.path.splitext(user_specified)[0]
                         return f"{base}.{format}"

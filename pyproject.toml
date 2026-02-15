@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "animate-netcdf"
-version = "1.7.6"
+version = "1.8.0"
 description = "A comprehensive tool for creating animations from NetCDF data files"
 readme = "readme.md"
 license = { file = "LICENSE" }
@@ -44,6 +44,7 @@ dependencies = [
 
 [project.optional-dependencies]
 yaml = ["pyyaml>=5.0"]
+gif = ["Pillow>=8.0.0"]
 dev = ["pytest>=6.0", "pytest-cov>=2.0", "black>=21.0", "flake8>=3.8"]
 
 [project.urls]

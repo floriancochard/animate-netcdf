@@ -99,7 +99,9 @@ class InteractiveFlow:
         designer_mode = self._get_designer_mode()
         config.designer_mode = designer_mode
         if designer_mode:
-            config.designer_square_crop = self._get_designer_square_crop()
+            crop_style = self._get_designer_crop_style()
+            config.designer_square_crop = (crop_style == 'square')
+            config.designer_full_domain = (crop_style == 'full_domain')
             config.designer_show_map_contours = self._get_designer_show_map_contours()
         
         # Step 11: Transparent background (for PNG)
@@ -191,16 +193,19 @@ class InteractiveFlow:
         print("-" * 40)
         print("1. PNG sequence (one PNG per file)")
         print("2. MP4 video (single video from all files)")
+        print("3. GIF animation (single GIF from all files)")
         
         while True:
             try:
-                choice = input("\nSelect output format (1-2): ").strip()
+                choice = input("\nSelect output format (1-3): ").strip()
                 if choice == "1":
                     return "png"
                 elif choice == "2":
                     return "mp4"
+                elif choice == "3":
+                    return "gif"
                 else:
-                    print("❌ Please enter 1 or 2")
+                    print("❌ Please enter 1, 2, or 3")
             except KeyboardInterrupt:
                 print("\n⚠️  Operation cancelled")
                 return None
@@ -476,6 +481,27 @@ class InteractiveFlow:
             except KeyboardInterrupt:
                 print("\n⚠️  Operation cancelled")
                 return False
+
+    def _get_designer_crop_style(self) -> str:
+        """Get designer crop style: square, full domain rectangle, or data extent."""
+        print("\n📐 Crop style (designer mode)")
+        print("-" * 40)
+        print("  (s)quare     – output is a square centered on the map, no padding")
+        print("  (f)ull domain – rectangle covering the whole NetCDF domain (no zoom)")
+        print("  (d)ata extent – rectangle of current data (respects zoom if set)")
+        while True:
+            try:
+                choice = input("Choice (s/f/d, default: d): ").strip().lower()
+                if not choice or choice == 'd':
+                    return 'data'
+                if choice == 's':
+                    return 'square'
+                if choice == 'f':
+                    return 'full_domain'
+                print("❌ Please enter s, f, or d")
+            except KeyboardInterrupt:
+                print("\n⚠️  Operation cancelled")
+                return 'data'
 
     def _get_designer_square_crop(self) -> bool:
         """Get designer square-crop preference (square output, no padding)."""

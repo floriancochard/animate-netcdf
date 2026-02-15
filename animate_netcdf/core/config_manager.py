@@ -132,10 +132,24 @@ class AnimationConfig:
     
     # Map and visualization settings
     cmap: Optional[str] = None  # Matplotlib colormap name (e.g. 'Blues', 'viridis')
+    show_land_sea: bool = True  # Land/ocean fill so coasts are clear when zoomed
+    show_place_names: bool = False  # Minimal city labels for orientation when zoomed
+    place_names_min_population: Optional[int] = None  # Min pop for labels; None = auto from zoom
+    # Map palette (land/sea colours and patterns; None = use defaults)
+    map_land_color: Optional[str] = None   # e.g. '#c4c4c4', 'lightgray'
+    map_ocean_color: Optional[str] = None  # e.g. '#9dd0e2', 'lightcyan'
+    map_land_alpha: Optional[float] = None   # 0–1; higher = stronger land fill
+    map_ocean_alpha: Optional[float] = None  # 0–1; higher = stronger ocean fill
+    data_alpha: Optional[float] = None      # 0–1; opacity of the data layer (1 = fully opaque)
+    map_land_hatch: Optional[str] = None   # e.g. '///' for diagonal lines on land
+    map_ocean_hatch: Optional[str] = None  # e.g. '' or '---' for ocean pattern
+    # Land/sea fill resolution: '110m' (coarse), '50m' (default, matches coastlines), '10m' (fine)
+    map_land_sea_scale: Optional[str] = None  # None = use 50m
     
     # Designer mode settings
     designer_mode: bool = False
     designer_square_crop: bool = False  # Square output centered on map, no padding
+    designer_full_domain: bool = False  # Use full NetCDF domain as rectangle (no zoom crop)
     designer_show_map_contours: bool = False  # Show coastlines/borders in designer mode
     
     # Output appearance settings
@@ -180,8 +194,20 @@ class AnimationConfig:
             'zoom_center_lat': self.zoom_center_lat,
             'zoom_center_lon': self.zoom_center_lon,
             'cmap': self.cmap,
+            'show_land_sea': self.show_land_sea,
+            'show_place_names': self.show_place_names,
+            'place_names_min_population': self.place_names_min_population,
+            'map_land_color': self.map_land_color,
+            'map_ocean_color': self.map_ocean_color,
+            'map_land_alpha': self.map_land_alpha,
+            'map_ocean_alpha': self.map_ocean_alpha,
+            'data_alpha': self.data_alpha,
+            'map_land_hatch': self.map_land_hatch,
+            'map_ocean_hatch': self.map_ocean_hatch,
+            'map_land_sea_scale': self.map_land_sea_scale,
             'designer_mode': self.designer_mode,
             'designer_square_crop': self.designer_square_crop,
+            'designer_full_domain': self.designer_full_domain,
             'designer_show_map_contours': self.designer_show_map_contours,
             'transparent': self.transparent,
             'ignore_values': self.ignore_values,
@@ -233,13 +259,20 @@ class AnimationConfig:
                         except (ValueError, TypeError):
                             self._validation_errors.append(f"Invalid ignore_values: {value}. Must be a list of numbers")
                             continue
-                elif key in ('vmin', 'vmax', 'zoom_center_lat', 'zoom_center_lon'):
+                elif key in ('vmin', 'vmax', 'zoom_center_lat', 'zoom_center_lon',
+                             'map_land_alpha', 'map_ocean_alpha', 'data_alpha'):
                     if value is not None:
                         try:
                             value = float(value)
                         except (ValueError, TypeError):
                             self._validation_errors.append(f"Invalid {key}: must be a number or None")
                             continue
+                elif key == 'map_land_sea_scale':
+                    if value is not None and value not in ('110m', '50m', '10m'):
+                        self._validation_errors.append(
+                            f"Invalid map_land_sea_scale: {value}. Must be one of: 110m, 50m, 10m"
+                        )
+                        continue
                 
                 setattr(self, key, value)
             else:
@@ -309,6 +342,10 @@ class AnimationConfig:
         # Animation dimension validation
         if self.animate_dim and not self._validate_dimension_name(self.animate_dim):
             errors.append(f"Invalid animation dimension: {self.animate_dim}")
+        
+        # Land/sea scale validation (Natural Earth resolution)
+        if self.map_land_sea_scale is not None and self.map_land_sea_scale not in ('110m', '50m', '10m'):
+            errors.append("map_land_sea_scale must be one of: 110m, 50m, 10m")
         
         return errors
     

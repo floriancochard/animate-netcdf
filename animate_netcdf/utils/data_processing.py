@@ -152,18 +152,76 @@ class DataProcessor:
         return data, lats, lons
     
     @staticmethod
+    def _coord_shape_matches(coord: xr.DataArray, data_array: xr.DataArray) -> bool:
+        """Return True if coord shape is compatible with data_array's spatial dimensions."""
+        if len(coord.shape) == 1:
+            return coord.shape[0] in (data_array.shape[0], data_array.shape[1])
+        if len(coord.shape) == 2:
+            return coord.shape == (data_array.shape[0], data_array.shape[1])
+        return False
+
+    @staticmethod
     def _extract_coordinates(data_array: xr.DataArray) -> Tuple[np.ndarray, np.ndarray]:
-        """Extract latitude and longitude coordinates from data array."""
-        # Try to get coordinates from the data array itself
+        """Extract latitude and longitude coordinates from data array.
+        Prefer grid-specific coords (latitude_u/longitude_u, latitude_v/longitude_v)
+        when they match the variable's dimensions, so map extent matches the data grid.
+        """
         coords = data_array.coords
-        
-        # Check for common coordinate names
+
+        # Prefer U-grid and V-grid coordinates when present and shape matches (e.g. wind
+        # components on staggered grids). This ensures Cartopy land/sea extent matches the data.
+        for lat_name, lon_name in [
+            ('latitude_u', 'longitude_u'),
+            ('latitude_v', 'longitude_v'),
+        ]:
+            if lat_name in coords and lon_name in coords:
+                lat_coord = coords[lat_name]
+                lon_coord = coords[lon_name]
+                if (DataProcessor._coord_shape_matches(lat_coord, data_array) and
+                        DataProcessor._coord_shape_matches(lon_coord, data_array)):
+                    lats = lat_coord.values
+                    lons = lon_coord.values
+                    try:
+                        lats = lats.astype(float)
+                        lons = lons.astype(float)
+                    except (ValueError, TypeError):
+                        pass
+                    else:
+                        return lats, lons
+
+        # Standard T-grid / generic names
         if 'latitude' in coords and 'longitude' in coords:
-            lats = coords['latitude'].values
-            lons = coords['longitude'].values
+            lat_coord = coords['latitude']
+            lon_coord = coords['longitude']
+            if (DataProcessor._coord_shape_matches(lat_coord, data_array) and
+                    DataProcessor._coord_shape_matches(lon_coord, data_array)):
+                lats = coords['latitude'].values
+                lons = coords['longitude'].values
+            else:
+                lats = None
+                lons = None
+        else:
+            lats = None
+            lons = None
+
+        if lats is not None and lons is not None:
+            pass  # use lats, lons below
         elif 'lat' in coords and 'lon' in coords:
-            lats = coords['lat'].values
-            lons = coords['lon'].values
+            lat_coord = coords['lat']
+            lon_coord = coords['lon']
+            if (DataProcessor._coord_shape_matches(lat_coord, data_array) and
+                    DataProcessor._coord_shape_matches(lon_coord, data_array)):
+                lats = coords['lat'].values
+                lons = coords['lon'].values
+            else:
+                lats = None
+                lons = None
+        else:
+            lats = None
+            lons = None
+
+        if lats is not None and lons is not None:
+            pass  # use lats, lons below
         else:
             # Check for other coordinate names that might be spatial
             available_coords = list(coords.keys())
@@ -246,8 +304,9 @@ class DataProcessor:
         # For zoom_factor < 1, we expand the domain (not typically useful)
         if zoom_factor > 1.0:
             # Calculate new dimensions (crop); keep square so X and Y domain extent match
-            new_height = int(original_height / zoom_factor)
-            new_width = int(original_width / zoom_factor)
+            # Ensure at least 1 pixel per dimension so zoomed view always shows data
+            new_height = max(1, int(original_height / zoom_factor))
+            new_width = max(1, int(original_width / zoom_factor))
             crop_side = min(new_height, new_width)
             new_height = crop_side
             new_width = crop_side

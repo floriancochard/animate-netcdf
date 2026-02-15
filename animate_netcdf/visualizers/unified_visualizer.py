@@ -18,6 +18,7 @@ from animate_netcdf.core.file_manager import NetCDFFileManager
 from animate_netcdf.utils.data_processing import DataProcessor
 from animate_netcdf.utils.plot_utils import PlotUtils
 from animate_netcdf.utils.ffmpeg_utils import ffmpeg_manager
+from animate_netcdf.utils.colour_palettes import get_palette_by_id
 
 # Designer mode export: high-resolution defaults (applied whenever designer_mode is True)
 DESIGNER_EXPORT_DPI = 100
@@ -41,8 +42,19 @@ class NetCDFVisualizer:
         self.plot_utils.check_cartopy_maps()
     
     def _get_cmap(self) -> str:
-        """Return matplotlib colormap name from config, default 'Blues'."""
-        return (self.config.cmap or "Blues").strip() or "Blues"
+        """Return matplotlib colormap name from config, default 'Blues'.
+        Resolves palette IDs (e.g. 'temperature_coolwarm') to matplotlib names (e.g. 'coolwarm')
+        so that config from file or interactive flow works for both PNG and MP4.
+        """
+        raw = (self.config.cmap or "Blues").strip() or "Blues"
+        resolved = get_palette_by_id(raw)
+        return resolved if resolved is not None else raw
+
+    def _get_data_alpha(self, designer: bool = False) -> float:
+        """Return data layer opacity (0–1). Config data_alpha overrides default."""
+        default = 0.65 if designer else 0.7
+        val = getattr(self.config, 'data_alpha', None)
+        return val if val is not None else default
     
     def visualize(self, input_path: str) -> bool:
         """Main entry point for visualization.
@@ -143,6 +155,8 @@ class NetCDFVisualizer:
         
         if output_format == 'png':
             return self._create_png_sequence(file_manager, files)
+        elif output_format == 'gif':
+            return self._create_gif_animation(file_manager, files)
         else:
             return self._create_mp4_animation(file_manager, files)
     
@@ -159,10 +173,16 @@ class NetCDFVisualizer:
             if not animate_dim:
                 animate_dim = 'time'
             
+            # In designer full-domain mode, use whole NetCDF domain (no zoom)
+            effective_zoom = (1.0 if (self.config.designer_mode and getattr(self.config, 'designer_full_domain', False))
+                             else self.config.zoom_factor)
+            # Full-domain mode uses rectangle; square crop only when not full domain
+            square_crop = getattr(self.config, 'designer_square_crop', False) and not getattr(self.config, 'designer_full_domain', False)
+            
             # Prepare data for first time step
             data, lats, lons = self.data_processor.prepare_data_for_plotting(
                 variable, time_step=0, animate_dim=animate_dim,
-                level_index=self.config.level_index, zoom_factor=self.config.zoom_factor,
+                level_index=self.config.level_index, zoom_factor=effective_zoom,
                 zoom_center_lat=self.config.zoom_center_lat, zoom_center_lon=self.config.zoom_center_lon
             )
             
@@ -173,37 +193,67 @@ class NetCDFVisualizer:
             if plot_type in ['efficient', 'contour']:
                 # Use designer-specific functions if in designer mode
                 if self.config.designer_mode:
-                    square_crop = getattr(self.config, 'designer_square_crop', False)
                     show_map_contours = getattr(self.config, 'designer_show_map_contours', False)
                     fig, ax = self.plot_utils.create_designer_geographic_plot(
                         plot_type, square_crop=square_crop
                     )
                     self.plot_utils.setup_designer_geographic_plot(
                         ax, lats, lons, square_crop=square_crop,
-                        show_map_contours=show_map_contours
+                        show_map_contours=show_map_contours,
+                        show_land_sea=getattr(self.config, 'show_land_sea', True),
+                        show_place_names=getattr(self.config, 'show_place_names', False),
+                        place_names_min_population=getattr(self.config, 'place_names_min_population', None),
+                        map_land_color=getattr(self.config, 'map_land_color', None),
+                        map_ocean_color=getattr(self.config, 'map_ocean_color', None),
+                        map_land_alpha=getattr(self.config, 'map_land_alpha', None),
+                        map_ocean_alpha=getattr(self.config, 'map_ocean_alpha', None),
+                        map_land_hatch=getattr(self.config, 'map_land_hatch', None),
+                        map_ocean_hatch=getattr(self.config, 'map_ocean_hatch', None),
+                        map_land_sea_scale=getattr(self.config, 'map_land_sea_scale', None),
                     )
                     
                     if plot_type == 'efficient':
                         im = self.plot_utils.create_designer_efficient_plot(
-                            ax, filtered_data, lats, lons, cmap=self._get_cmap()
+                            ax, filtered_data, lats, lons, cmap=self._get_cmap(),
+                            alpha=self._get_data_alpha(designer=True)
                         )
                     else:
                         im = self.plot_utils.create_designer_contour_plot(
-                            ax, filtered_data, lats, lons, cmap=self._get_cmap()
+                            ax, filtered_data, lats, lons, cmap=self._get_cmap(),
+                            alpha=self._get_data_alpha(designer=True)
                         )
                     
+                    if getattr(self.config, 'show_place_names', False):
+                        self.plot_utils.add_place_names(
+                            ax, extent=None, max_labels=12, fontsize=24,
+                            min_population=getattr(self.config, 'place_names_min_population', None),
+                        )
                     # No colorbar in designer mode
                 else:
                     fig, ax = self.plot_utils.create_geographic_plot(plot_type)
-                    self.plot_utils.setup_geographic_plot(ax, lats, lons)
+                    self.plot_utils.setup_geographic_plot(
+                        ax, lats, lons,
+                        show_land_sea=getattr(self.config, 'show_land_sea', True),
+                        show_place_names=getattr(self.config, 'show_place_names', False),
+                        place_names_min_population=getattr(self.config, 'place_names_min_population', None),
+                        map_land_color=getattr(self.config, 'map_land_color', None),
+                        map_ocean_color=getattr(self.config, 'map_ocean_color', None),
+                        map_land_alpha=getattr(self.config, 'map_land_alpha', None),
+                        map_ocean_alpha=getattr(self.config, 'map_ocean_alpha', None),
+                        map_land_hatch=getattr(self.config, 'map_land_hatch', None),
+                        map_ocean_hatch=getattr(self.config, 'map_ocean_hatch', None),
+                        map_land_sea_scale=getattr(self.config, 'map_land_sea_scale', None),
+                    )
                     
                     if plot_type == 'efficient':
                         im = self.plot_utils.create_efficient_plot(
-                            ax, filtered_data, lats, lons, cmap=self._get_cmap()
+                            ax, filtered_data, lats, lons, cmap=self._get_cmap(),
+                            alpha=self._get_data_alpha(designer=False)
                         )
                     else:
                         im = self.plot_utils.create_contour_plot(
-                            ax, filtered_data, lats, lons, cmap=self._get_cmap()
+                            ax, filtered_data, lats, lons, cmap=self._get_cmap(),
+                            alpha=self._get_data_alpha(designer=False)
                         )
                     
                     units = variable.attrs.get("units", "")
@@ -215,6 +265,11 @@ class NetCDFVisualizer:
                     )
                     units_str = self.plot_utils.get_variable_subtitle(self.config.variable, ds)
                     self.plot_utils.add_title_and_subtitle(ax, self.config.variable, time_str, units_str)
+                    if getattr(self.config, 'show_place_names', False):
+                        self.plot_utils.add_place_names(
+                            ax, extent=None, max_labels=15, fontsize=10,
+                            min_population=getattr(self.config, 'place_names_min_population', None),
+                        )
             else:
                 # Heatmap
                 fig, ax = self.plot_utils.create_heatmap_plot()
@@ -227,7 +282,7 @@ class NetCDFVisualizer:
             if self.config.transparent or self.config.designer_mode:
                 save_kwargs['transparent'] = True
                 save_kwargs['facecolor'] = 'none'
-            if getattr(self.config, 'designer_square_crop', False):
+            if square_crop:
                 save_kwargs['pad_inches'] = 0
             
             plt.savefig(output_file, **save_kwargs)
@@ -303,8 +358,10 @@ class NetCDFVisualizer:
             # Create figure
             plot_type = getattr(self.config, 'plot_type', 'efficient') or 'efficient'
             
-            # Use designer-specific functions if in designer mode
-            square_crop = getattr(self.config, 'designer_square_crop', False)
+            # In designer full-domain mode, use whole NetCDF domain (no zoom); rectangle, not square
+            effective_zoom = (1.0 if (self.config.designer_mode and getattr(self.config, 'designer_full_domain', False))
+                             else self.config.zoom_factor)
+            square_crop = getattr(self.config, 'designer_square_crop', False) and not getattr(self.config, 'designer_full_domain', False)
             if self.config.designer_mode:
                 show_map_contours = getattr(self.config, 'designer_show_map_contours', False)
                 fig, ax = self.plot_utils.create_designer_geographic_plot(
@@ -321,7 +378,7 @@ class NetCDFVisualizer:
                 data_array = ds[self.config.variable]
                 data, lats, lons = self.data_processor.prepare_data_for_plotting(
                     data_array, time_step=0, animate_dim='time',
-                    level_index=self.config.level_index, zoom_factor=self.config.zoom_factor,
+                    level_index=self.config.level_index, zoom_factor=effective_zoom,
                     zoom_center_lat=self.config.zoom_center_lat, zoom_center_lon=self.config.zoom_center_lon,
                     verbose=False
                 )
@@ -330,38 +387,71 @@ class NetCDFVisualizer:
             if self.config.designer_mode:
                 self.plot_utils.setup_designer_geographic_plot(
                     ax, lats, lons, square_crop=square_crop,
-                    show_map_contours=show_map_contours
+                    show_map_contours=show_map_contours,
+                    show_land_sea=getattr(self.config, 'show_land_sea', True),
+                    show_place_names=getattr(self.config, 'show_place_names', False),
+                    place_names_min_population=getattr(self.config, 'place_names_min_population', None),
+                    map_land_color=getattr(self.config, 'map_land_color', None),
+                    map_ocean_color=getattr(self.config, 'map_ocean_color', None),
+                    map_land_alpha=getattr(self.config, 'map_land_alpha', None),
+                    map_ocean_alpha=getattr(self.config, 'map_ocean_alpha', None),
+                    map_land_hatch=getattr(self.config, 'map_land_hatch', None),
+                    map_ocean_hatch=getattr(self.config, 'map_ocean_hatch', None),
+                    map_land_sea_scale=getattr(self.config, 'map_land_sea_scale', None),
                 )
             else:
-                self.plot_utils.setup_geographic_plot(ax, lats, lons)
+                self.plot_utils.setup_geographic_plot(
+                    ax, lats, lons,
+                    show_land_sea=getattr(self.config, 'show_land_sea', True),
+                    show_place_names=getattr(self.config, 'show_place_names', False),
+                    place_names_min_population=getattr(self.config, 'place_names_min_population', None),
+                    map_land_color=getattr(self.config, 'map_land_color', None),
+                    map_ocean_color=getattr(self.config, 'map_ocean_color', None),
+                    map_land_alpha=getattr(self.config, 'map_land_alpha', None),
+                    map_ocean_alpha=getattr(self.config, 'map_ocean_alpha', None),
+                    map_land_hatch=getattr(self.config, 'map_land_hatch', None),
+                    map_ocean_hatch=getattr(self.config, 'map_ocean_hatch', None),
+                    map_land_sea_scale=getattr(self.config, 'map_land_sea_scale', None),
+                )
             
             vmin, vmax = self._get_colorbar_range(initial_data, global_data_range)
             
             cmap = self._get_cmap()
+            data_alpha_d = self._get_data_alpha(designer=True)
+            data_alpha_n = self._get_data_alpha(designer=False)
             if self.config.designer_mode:
                 if plot_type == 'efficient':
                     im = self.plot_utils.create_designer_efficient_plot(
-                        ax, initial_data, lats, lons, vmin, vmax, cmap=cmap
+                        ax, initial_data, lats, lons, vmin, vmax, cmap=cmap, alpha=data_alpha_d
                     )
                 else:
                     levels = np.linspace(vmin, vmax, 20)
                     im = self.plot_utils.create_designer_contour_plot(
-                        ax, initial_data, lats, lons, vmin, vmax, levels=levels, cmap=cmap
+                        ax, initial_data, lats, lons, vmin, vmax, levels=levels, cmap=cmap, alpha=data_alpha_d
                     )
                 # No colorbar in designer mode
             else:
                 if plot_type == 'efficient':
                     im = self.plot_utils.create_efficient_plot(
-                        ax, initial_data, lats, lons, vmin, vmax, cmap=cmap
+                        ax, initial_data, lats, lons, vmin, vmax, cmap=cmap, alpha=data_alpha_n
                     )
                 else:
                     levels = np.linspace(vmin, vmax, 20)
                     im = self.plot_utils.create_contour_plot(
-                        ax, initial_data, lats, lons, vmin, vmax, levels=levels, cmap=cmap
+                        ax, initial_data, lats, lons, vmin, vmax, levels=levels, cmap=cmap, alpha=data_alpha_n
                     )
                 
                 units = ""  # We don't have dataset access here
                 self.plot_utils.add_colorbar(im, ax, self.config.variable, units)
+            
+            # Add place names after data layer so they render on top and are included when saving
+            if getattr(self.config, 'show_place_names', False):
+                self.plot_utils.add_place_names(
+                    ax, extent=None,
+                    max_labels=12 if self.config.designer_mode else 15,
+                    fontsize=18 if self.config.designer_mode else 24,
+                    min_population=getattr(self.config, 'place_names_min_population', None),
+                )
             
             # Animation function
             def animate(frame):
@@ -377,24 +467,25 @@ class NetCDFVisualizer:
                             collection.remove()
                         if self.config.designer_mode:
                             new_contour = self.plot_utils.create_designer_contour_plot(
-                                ax, data, lats, lons, vmin, vmax, levels=levels, cmap=cmap
+                                ax, data, lats, lons, vmin, vmax, levels=levels, cmap=cmap, alpha=data_alpha_d
                             )
                         else:
                             new_contour = self.plot_utils.create_contour_plot(
-                                ax, data, lats, lons, vmin, vmax, levels=levels, cmap=cmap
+                                ax, data, lats, lons, vmin, vmax, levels=levels, cmap=cmap, alpha=data_alpha_n
                             )
                 
                 # Update title (only if not in designer mode)
                 if not self.config.designer_mode:
                     timestep = file_manager.get_timestep_by_file(file_path)
-                    ax.set_title(f'{self.config.variable} - Timestep {timestep}', fontsize=14, pad=20)
+                    ax.set_title(f'{self.config.variable} - Timestep {timestep}', fontsize=24, pad=20)
                 
                 return [im] if plot_type == 'efficient' else [new_contour]
             
-            # Create animation
+            # blit=False when place names are on so static text is included in every saved frame
+            use_blit = not getattr(self.config, 'show_place_names', False)
             anim = animation.FuncAnimation(
                 fig, animate, frames=len(files),
-                interval=1000//self.config.fps, blit=True, repeat=True
+                interval=1000//self.config.fps, blit=use_blit, repeat=True
             )
             
             # Save animation: designer mode always uses high-res DPI/bitrate (zoom has no effect on this)
@@ -423,9 +514,166 @@ class NetCDFVisualizer:
             traceback.print_exc()
             return False
     
+    def _create_gif_animation(self, file_manager: NetCDFFileManager, files: List[str]) -> bool:
+        """Create a GIF animation from multiple NetCDF files (same logic as MP4, saved via Pillow)."""
+        print(f"\n🖼️  Creating GIF animation from {len(files)} files...")
+        
+        output_file = self.config.output_pattern or self._generate_output_filename(
+            self.config.variable, 'gif'
+        )
+        
+        if os.path.exists(output_file) and not self.config.overwrite_existing:
+            print(f"⚠️  Output file {output_file} already exists. Use --overwrite to overwrite.")
+            return False
+        
+        try:
+            global_data_range = None
+            if self.config.global_colorbar and self.config.pre_scan_files:
+                print("🔍 Pre-scanning files for global data range...")
+                global_data_range = self._pre_scan_data_range(files)
+            
+            plot_type = getattr(self.config, 'plot_type', 'efficient') or 'efficient'
+            effective_zoom = (1.0 if (self.config.designer_mode and getattr(self.config, 'designer_full_domain', False))
+                             else self.config.zoom_factor)
+            square_crop = getattr(self.config, 'designer_square_crop', False) and not getattr(self.config, 'designer_full_domain', False)
+            if self.config.designer_mode:
+                show_map_contours = getattr(self.config, 'designer_show_map_contours', False)
+                fig, ax = self.plot_utils.create_designer_geographic_plot(
+                    plot_type, square_crop=square_crop
+                )
+            else:
+                fig, ax = self.plot_utils.create_geographic_plot(plot_type)
+            
+            with xr.open_dataset(files[0]) as ds:
+                if self.config.variable not in ds.data_vars:
+                    print(f"❌ Variable '{self.config.variable}' not found in first file")
+                    return False
+                data_array = ds[self.config.variable]
+                data, lats, lons = self.data_processor.prepare_data_for_plotting(
+                    data_array, time_step=0, animate_dim='time',
+                    level_index=self.config.level_index, zoom_factor=effective_zoom,
+                    zoom_center_lat=self.config.zoom_center_lat, zoom_center_lon=self.config.zoom_center_lon,
+                    verbose=False
+                )
+            initial_data = self._apply_filters(data)
+            
+            if self.config.designer_mode:
+                self.plot_utils.setup_designer_geographic_plot(
+                    ax, lats, lons, square_crop=square_crop,
+                    show_map_contours=show_map_contours,
+                    show_land_sea=getattr(self.config, 'show_land_sea', True),
+                    show_place_names=getattr(self.config, 'show_place_names', False),
+                    place_names_min_population=getattr(self.config, 'place_names_min_population', None),
+                    map_land_color=getattr(self.config, 'map_land_color', None),
+                    map_ocean_color=getattr(self.config, 'map_ocean_color', None),
+                    map_land_alpha=getattr(self.config, 'map_land_alpha', None),
+                    map_ocean_alpha=getattr(self.config, 'map_ocean_alpha', None),
+                    map_land_hatch=getattr(self.config, 'map_land_hatch', None),
+                    map_ocean_hatch=getattr(self.config, 'map_ocean_hatch', None),
+                    map_land_sea_scale=getattr(self.config, 'map_land_sea_scale', None),
+                )
+            else:
+                self.plot_utils.setup_geographic_plot(
+                    ax, lats, lons,
+                    show_land_sea=getattr(self.config, 'show_land_sea', True),
+                    show_place_names=getattr(self.config, 'show_place_names', False),
+                    place_names_min_population=getattr(self.config, 'place_names_min_population', None),
+                    map_land_color=getattr(self.config, 'map_land_color', None),
+                    map_ocean_color=getattr(self.config, 'map_ocean_color', None),
+                    map_land_alpha=getattr(self.config, 'map_land_alpha', None),
+                    map_ocean_alpha=getattr(self.config, 'map_ocean_alpha', None),
+                    map_land_hatch=getattr(self.config, 'map_land_hatch', None),
+                    map_ocean_hatch=getattr(self.config, 'map_ocean_hatch', None),
+                    map_land_sea_scale=getattr(self.config, 'map_land_sea_scale', None),
+                )
+            
+            vmin, vmax = self._get_colorbar_range(initial_data, global_data_range)
+            cmap = self._get_cmap()
+            data_alpha_d = self._get_data_alpha(designer=True)
+            data_alpha_n = self._get_data_alpha(designer=False)
+            if self.config.designer_mode:
+                if plot_type == 'efficient':
+                    im = self.plot_utils.create_designer_efficient_plot(
+                        ax, initial_data, lats, lons, vmin, vmax, cmap=cmap, alpha=data_alpha_d
+                    )
+                else:
+                    levels = np.linspace(vmin, vmax, 20)
+                    im = self.plot_utils.create_designer_contour_plot(
+                        ax, initial_data, lats, lons, vmin, vmax, levels=levels, cmap=cmap, alpha=data_alpha_d
+                    )
+            else:
+                if plot_type == 'efficient':
+                    im = self.plot_utils.create_efficient_plot(
+                        ax, initial_data, lats, lons, vmin, vmax, cmap=cmap, alpha=data_alpha_n
+                    )
+                else:
+                    levels = np.linspace(vmin, vmax, 20)
+                    im = self.plot_utils.create_contour_plot(
+                        ax, initial_data, lats, lons, vmin, vmax, levels=levels, cmap=cmap, alpha=data_alpha_n
+                    )
+                units = ""
+                self.plot_utils.add_colorbar(im, ax, self.config.variable, units)
+            
+            if getattr(self.config, 'show_place_names', False):
+                self.plot_utils.add_place_names(
+                    ax, extent=None,
+                    max_labels=12 if self.config.designer_mode else 15,
+                    fontsize=18 if self.config.designer_mode else 24,
+                    min_population=getattr(self.config, 'place_names_min_population', None),
+                )
+            
+            def animate(frame):
+                file_path = files[frame]
+                data = self._load_file_data(file_path)
+                if data is not None:
+                    if plot_type == 'efficient':
+                        im.set_array(data)
+                    else:
+                        for collection in ax.collections:
+                            collection.remove()
+                        if self.config.designer_mode:
+                            new_contour = self.plot_utils.create_designer_contour_plot(
+                                ax, data, lats, lons, vmin, vmax, levels=levels, cmap=cmap, alpha=data_alpha_d
+                            )
+                        else:
+                            new_contour = self.plot_utils.create_contour_plot(
+                                ax, data, lats, lons, vmin, vmax, levels=levels, cmap=cmap, alpha=data_alpha_n
+                            )
+                if not self.config.designer_mode:
+                    timestep = file_manager.get_timestep_by_file(file_path)
+                    ax.set_title(f'{self.config.variable} - Timestep {timestep}', fontsize=24, pad=20)
+                return [im] if plot_type == 'efficient' else [new_contour]
+            
+            use_blit = not getattr(self.config, 'show_place_names', False)
+            anim = animation.FuncAnimation(
+                fig, animate, frames=len(files),
+                interval=1000//self.config.fps, blit=use_blit, repeat=True
+            )
+            
+            if self.config.designer_mode:
+                dpi = DESIGNER_EXPORT_DPI
+                print(f"📐 Designer mode: exporting GIF at {dpi} DPI")
+            else:
+                dpi = DEFAULT_EXPORT_DPI
+            success = self.plot_utils.save_animation_gif(
+                anim, output_file, self.config.fps, dpi=dpi
+            )
+            plt.close(fig)
+            if success:
+                print(f"✅ GIF saved: {output_file}")
+            return success
+        except Exception as e:
+            print(f"❌ Error creating GIF animation: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+    
     def _load_file_data(self, file_path: str) -> Optional[np.ndarray]:
         """Load and process data from a single file."""
         try:
+            # In designer full-domain mode, use whole NetCDF domain (no zoom)
+            effective_zoom = (1.0 if (self.config.designer_mode and getattr(self.config, 'designer_full_domain', False))
+                             else self.config.zoom_factor)
             with xr.open_dataset(file_path) as ds:
                 if self.config.variable not in ds.data_vars:
                     return None
@@ -435,7 +683,7 @@ class NetCDFVisualizer:
                 # Reduce to 2D
                 data, _, _ = self.data_processor.prepare_data_for_plotting(
                     data_array, time_step=0, animate_dim='time',
-                    level_index=self.config.level_index, zoom_factor=self.config.zoom_factor,
+                    level_index=self.config.level_index, zoom_factor=effective_zoom,
                     zoom_center_lat=self.config.zoom_center_lat, zoom_center_lon=self.config.zoom_center_lon,
                     verbose=False
                 )

@@ -185,25 +185,24 @@ class AppController:
         if args.variable:
             config.variable = args.variable
         
+        # Output format: only override when explicitly passed via CLI
+        if args.format:
+            config.output_format = OutputFormat(args.format)
+        # else: keep existing config.output_format (from interactive flow or config file)
+
         # Output
         if args.output:
             config.output_pattern = args.output
         else:
-            # Generate output filename
-            output_format = args.format or ('png' if not is_multi_file else 'mp4')
-            config.output_pattern = self.output_manager.generate_output_filename(
-                config.variable or 'output', output_format, None, is_multi_file
+            # Generate output filename using effective format (CLI > config > default)
+            effective_format = (
+                args.format
+                or (config.output_format.value if hasattr(config.output_format, 'value') else None)
+                or ('png' if not is_multi_file else 'mp4')
             )
-        
-        # Output format
-        if args.format:
-            config.output_format = OutputFormat(args.format)
-        elif is_multi_file:
-            # Default to MP4 for multi-file
-            config.output_format = OutputFormat.MP4
-        else:
-            # Single file always PNG (not used by visualizer, but set for consistency)
-            config.output_format = OutputFormat.MP4  # Visualizer handles single file as PNG
+            config.output_pattern = self.output_manager.generate_output_filename(
+                config.variable or 'output', effective_format, None, is_multi_file
+            )
         
         # Colour palette (cmap)
         if getattr(args, 'cmap', None):
@@ -233,12 +232,24 @@ class AppController:
             config.designer_mode = True
         if getattr(args, 'designer_square_crop', False):
             config.designer_square_crop = True
+        if getattr(args, 'designer_full_domain', False):
+            config.designer_full_domain = True
         if getattr(args, 'designer_show_map_contours', False):
             config.designer_show_map_contours = True
+        if getattr(args, 'no_land_sea', False):
+            config.show_land_sea = False
+        if getattr(args, 'map_land_sea_scale', None) is not None:
+            config.map_land_sea_scale = args.map_land_sea_scale
+        if getattr(args, 'show_place_names', False):
+            config.show_place_names = True
         
         # Ignore values
         if args.ignore_values:
             config.ignore_values = args.ignore_values
+        
+        # Data layer opacity
+        if getattr(args, 'data_alpha', None) is not None:
+            config.data_alpha = args.data_alpha
         
         # Color scale range (vmin/vmax)
         if getattr(args, 'vmin', None) is not None:
